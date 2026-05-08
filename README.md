@@ -70,7 +70,15 @@ Para soportar nuevos LLM en el futuro:
 ## Ejecutar API
 
 ```bash
-uv run uvicorn app.main:app --reload
+uv run python -m uvicorn app.main:app --reload
+```
+
+## Ejecutar interfaz Streamlit (chat)
+
+La interfaz de chat reutiliza la misma lógica CAG del servicio (`LLMService`), incluido el mismo `system prompt` del endpoint de estimaciones.
+
+```bash
+uv run streamlit run streamlit_app.py
 ```
 
 ## Ejecutar con Docker Compose (desarrollo)
