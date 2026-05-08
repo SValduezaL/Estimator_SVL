@@ -34,7 +34,7 @@ ESTIMATION_EXAMPLES = [
         "meeting_summary": (
             "Comercio online en WooCommerce necesita un plugin custom para packs "
             "de productos, reglas de descuento por volumen, compatibilidad con cupones, "
-            "sincronizacion de stock y panel de configuracion para marketing."
+            "sincronización de stock y panel de configuración para marketing."
         ),
         "estimation": """
 ## Estimacion: Plugin eCommerce para WooCommerce (packs y descuentos)

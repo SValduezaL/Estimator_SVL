@@ -25,4 +25,5 @@ class EstimationResponse(BaseModel):
     """Payload de salida normalizado por la capa de servicios."""
 
     estimation: str = Field(..., description="Estimacion generada por el LLM")
+    model: str = Field(..., description="Modelo LLM utilizado en la llamada")
     usage: TokenUsage

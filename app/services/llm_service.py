@@ -8,8 +8,10 @@ Este modulo centraliza:
 """
 
 import json
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Any, Iterator, Literal
 
 from anthropic import Anthropic
 from fastapi.concurrency import run_in_threadpool
@@ -45,6 +47,14 @@ class GenerationResult:
     usage: TokenUsage
 
 
+@dataclass
+class StreamEvent:
+    """Evento normalizado para streaming incremental y cierre con métricas."""
+
+    type: Literal["chunk", "done", "error"]
+    data: dict[str, Any]
+
+
 class BaseProviderClient(ABC):
     """Contrato comun para cualquier proveedor LLM integrado en el servicio."""
 
@@ -70,6 +80,18 @@ class BaseProviderClient(ABC):
         Returns:
             Resultado normalizado con texto y consumo de tokens.
         """
+
+    @abstractmethod
+    def stream_generate(
+        self,
+        *,
+        model: str,
+        system_prompt: str,
+        user_message: str,
+        temperature: float,
+        max_tokens: int,
+    ) -> Iterator[StreamEvent]:
+        """Emite eventos de streaming incremental y cierre con métricas."""
 
 
 class OpenAIProviderClient(BaseProviderClient):
@@ -124,6 +146,55 @@ class OpenAIProviderClient(BaseProviderClient):
             ),
         )
 
+    def stream_generate(
+        self,
+        *,
+        model: str,
+        system_prompt: str,
+        user_message: str,
+        temperature: float,
+        max_tokens: int,
+    ) -> Iterator[StreamEvent]:
+        """Hace streaming de tokens/chunks usando Chat Completions."""
+        stream = self.client.chat.completions.create(
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stream=True,
+            stream_options={"include_usage": True},
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ],
+        )
+        input_tokens = 0
+        output_tokens = 0
+        usage_available = False
+        for chunk in stream:
+            usage = getattr(chunk, "usage", None)
+            if usage is not None:
+                input_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+                output_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+                usage_available = True
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            content = getattr(delta, "content", None)
+            if content:
+                yield StreamEvent(type="chunk", data={"text": str(content)})
+
+        yield StreamEvent(
+            type="done",
+            data={
+                "usage": {
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "total_tokens": input_tokens + output_tokens,
+                },
+                "usage_available": usage_available,
+            },
+        )
+
 
 class AnthropicProviderClient(BaseProviderClient):
     """Adaptador Anthropic con soporte de system prompt dedicado."""
@@ -175,6 +246,43 @@ class AnthropicProviderClient(BaseProviderClient):
             ),
         )
 
+    def stream_generate(
+        self,
+        *,
+        model: str,
+        system_prompt: str,
+        user_message: str,
+        temperature: float,
+        max_tokens: int,
+    ) -> Iterator[StreamEvent]:
+        """Hace streaming incremental usando Messages API de Anthropic."""
+        with self.client.messages.stream(
+            model=model,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_message}],
+        ) as stream:
+            for text in stream.text_stream:
+                if text:
+                    yield StreamEvent(type="chunk", data={"text": text})
+            final_message = stream.get_final_message()
+            usage = getattr(final_message, "usage", None)
+            input_tokens = int(getattr(usage, "input_tokens", 0) or 0)
+            output_tokens = int(getattr(usage, "output_tokens", 0) or 0)
+            usage_available = usage is not None
+            yield StreamEvent(
+                type="done",
+                data={
+                    "usage": {
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                        "total_tokens": input_tokens + output_tokens,
+                    },
+                    "usage_available": usage_available,
+                },
+            )
+
 
 # Registro central: para agregar un nuevo proveedor solo hay que añadir
 # un nuevo adaptador y declararlo aqui.
@@ -217,32 +325,33 @@ class LLMService:
             )
         self.client = provider_cls(self._settings)
 
-    def build_system_prompt(self) -> str:
+    @staticmethod
+    def build_system_prompt() -> str:
         """Construye el mensaje `system` con instrucciones y ejemplos CAG.
 
         Returns:
             Prompt de sistema con rol del estimador, formato de salida
-            esperado y ejemplos historicos serializados.
+            esperado y ejemplos históricos serializados.
         """
         examples_json = json.dumps(ESTIMATION_EXAMPLES, ensure_ascii=True, indent=2)
         return (
-            "Eres un estimador senior de software especializado en discovery tecnico, "
-            "estimacion por tareas y analisis de riesgos.\n\n"
+            "Eres un estimador senior de software especializado en discovery técnico, "
+            "estimación por tareas y análisis de riesgos.\n\n"
             "Tu objetivo es generar estimaciones accionables y realistas basadas en "
-            "ejemplos historicos y en la transcripcion de una nueva reunion.\n\n"
-            "Usa como referencia los siguientes ejemplos historicos:\n"
+            "ejemplos históricos y en la transcripción de una nueva reunion.\n\n"
+            "Usa como referencia los siguientes ejemplos históricos:\n"
             f"{examples_json}\n\n"
-            "Responde en espanol y con este formato exacto:\n"
+            "Responde en español y con este formato exacto:\n"
             "1) Resumen del requerimiento (max 5 lineas)\n"
             "2) Alcance funcional\n"
             "3) Supuestos\n"
             "4) Riesgos\n"
-            "5) Estimacion de esfuerzo en horas (rango)\n"
+            "5) Estimación de esfuerzo en horas (rango)\n"
             "6) Coste estimado (EUR)\n"
             "7) Timeline sugerido (semanas)\n"
             "8) Equipo recomendado\n\n"
-            "No inventes integraciones no mencionadas. Si hay ambiguedad, "
-            "declara supuestos explicitamente."
+            "No inventes integraciones no mencionadas. Si hay ambigüedad, "
+            "declara supuestos explícitamente."
         )
 
     def build_user_message(self, transcription: str) -> str:
@@ -278,6 +387,39 @@ class LLMService:
             max_tokens=self._settings.max_tokens,
         )
 
+    def stream_estimate(self, transcription: str) -> Iterator[StreamEvent]:
+        """Ejecuta flujo CAG completo en modo streaming incremental."""
+        system_prompt = self.build_system_prompt()
+        user_message = self.build_user_message(transcription=transcription)
+        start_time = time.perf_counter()
+        done_sent = False
+        for event in self.client.stream_generate(
+            model=self._settings.llm_model,
+            system_prompt=system_prompt,
+            user_message=user_message,
+            temperature=self._settings.temperature,
+            max_tokens=self._settings.max_tokens,
+        ):
+            if event.type == "done":
+                done_sent = True
+                merged_data = dict(event.data)
+                merged_data["model"] = self._settings.llm_model
+                merged_data["response_seconds"] = time.perf_counter() - start_time
+                yield StreamEvent(type="done", data=merged_data)
+                continue
+            yield event
+
+        if not done_sent:
+            yield StreamEvent(
+                type="done",
+                data={
+                    "model": self._settings.llm_model,
+                    "response_seconds": time.perf_counter() - start_time,
+                    "usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+                    "usage_available": False,
+                },
+            )
+
 
 async def generate_estimation(
     transcription: str,
@@ -289,6 +431,7 @@ async def generate_estimation(
     result = await run_in_threadpool(service.estimate, transcription)
     return {
         "estimation": result.estimation,
+        "model": service._settings.llm_model,
         "usage": {
             "input_tokens": result.usage.input_tokens,
             "output_tokens": result.usage.output_tokens,
