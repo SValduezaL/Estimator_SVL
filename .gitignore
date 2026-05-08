@@ -1,0 +1,28 @@
+# Entorno local sensible
+.env
+
+# Entornos virtuales
+.venv/
+
+# Cachés y artefactos temporales de Python/herramientas
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.py[oc]
+
+# Artefactos de empaquetado/distribución
+build/
+dist/
+wheels/
+*.egg-info
+
+# OS files
+.DS_Store
+
+# IDEs
+.idea/
+.vscode/
+
+# Session guides / docs
+docs/

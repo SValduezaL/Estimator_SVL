@@ -1,0 +1,49 @@
+# Compose para desarrollo local con recarga en caliente.
+# Producción: quitar el volumen de código, quitar --reload y usar variables
+# de entorno del orquestador en lugar de montar .env si aplica.
+
+services:
+  estimator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: estimator-svl:dev
+
+    ports:
+      - "8000:8000"
+
+    # La app valida Settings al importar (app.config): hace falta .env coherente
+    # con el proveedor LLM (p. ej. OPENAI_API_KEY). Parte de .env.example.
+    env_file:
+      - .env
+
+    # Código montado: los cambios en ./app se ven sin rebuild.
+    # En Windows/Mac, si --reload no detecta cambios, prueba:
+    #   environment:
+    #     WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - ./app:/app/app
+
+    command: >
+      uvicorn app.main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+
+    restart: unless-stopped
+
+    # Sonda de salud para Docker Compose.
+    # Sobrescribe la sonda del Dockerfile
+    # (por si se necesita un intervalo menor en dev o un intervalo mayor en prod).
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
