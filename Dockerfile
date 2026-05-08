@@ -5,7 +5,7 @@
 # Etapa 1 — Builder
 # -----------------------------------------------------------------------------
 # Multi-etapa: las herramientas de build (uv, cachés) no van a la imagen final.
-FROM python:3.11-slim AS builder
+FROM python:3.11.13-slim-bookworm AS builder
 
 # Binario oficial de uv (rápido y reproducible). En producción conviene fijar
 # una etiqueta concreta (p. ej. ghcr.io/astral-sh/uv:0.6.x) en lugar de :latest.
@@ -32,12 +32,15 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # -----------------------------------------------------------------------------
 # Etapa 2 — Runtime
 # -----------------------------------------------------------------------------
-FROM python:3.11-slim AS runtime
+FROM python:3.11.13-slim-bookworm AS runtime
 
 LABEL org.opencontainers.image.title="Estimador CAG API"
 LABEL org.opencontainers.image.description="Servicio FastAPI para estimaciones (arquitectura CAG)"
 
-RUN groupadd --system appgroup && \
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    rm -rf /var/lib/apt/lists/* && \
+    groupadd --system appgroup && \
     useradd --system --gid appgroup --create-home --home-dir /home/appuser appuser
 
 WORKDIR /app
