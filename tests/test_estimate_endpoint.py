@@ -95,7 +95,7 @@ def test_example_format_json_returns_200(client: TestClient, call_log: list[dict
     assert body["usage"]["input_tokens"] > 0
     # The system message sent to OpenAI should contain the JSON examples block
     system_msg = call_log[0]["messages"][0]["content"]
-    assert "Reference examples (JSON):" in system_msg
+    assert "Ejemplos de referencia (JSON):" in system_msg
 
 
 def test_model_override_is_passed_to_provider(
@@ -120,5 +120,5 @@ def test_use_examples_false_omits_examples_block(
     response = client.post("/api/v1/estimate", json=payload)
     assert response.status_code == 200
     system_msg = call_log[0]["messages"][0]["content"]
-    assert "EXAMPLE 1" not in system_msg
-    assert "Reference examples" not in system_msg
+    assert "EJEMPLO 1" not in system_msg
+    assert "Ejemplos de referencia" not in system_msg

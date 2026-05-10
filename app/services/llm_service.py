@@ -7,7 +7,6 @@ Este modulo centraliza:
 - Normalizacion de respuesta y uso de tokens en un formato uniforme.
 """
 
-import json
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -18,7 +17,11 @@ from fastapi.concurrency import run_in_threadpool
 from openai import OpenAI
 
 from app.config import Settings, get_settings
-from app.context.examples import ESTIMATION_EXAMPLES
+from app.context.examples import (
+    CANONICAL_EXAMPLES,
+    format_examples_for_prompt,
+    select_examples,
+)
 
 
 @dataclass
@@ -333,7 +336,10 @@ class LLMService:
             Prompt de sistema con rol del estimador, formato de salida
             esperado y ejemplos históricos serializados.
         """
-        examples_json = json.dumps(ESTIMATION_EXAMPLES, ensure_ascii=True, indent=2)
+        examples_block = format_examples_for_prompt(
+            select_examples(len(CANONICAL_EXAMPLES)),
+            fmt="json",
+        )
         return (
             "Eres un estimador senior de software especializado en discovery técnico, "
             "estimación por tareas y análisis de riesgos.\n\n"

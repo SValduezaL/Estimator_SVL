@@ -17,8 +17,16 @@ Aplicacion base con FastAPI para estimar esfuerzo de desarrollo desde transcripc
 
 ## Instalacion
 
+Solo dependencias de runtime (API):
+
 ```bash
 uv sync
+```
+
+Con herramientas de desarrollo y tests (`pytest`, `httpx` para `TestClient`):
+
+```bash
+uv sync --dev
 ```
 
 Configura entorno:
@@ -51,11 +59,22 @@ Notas:
 - Si `LLM_PROVIDER` no existe en `LLM_MODELS_BY_PROVIDER` o el `LLM_MODEL` no pertenece a ese proveedor, la app fallara al arrancar con error de validacion.
 - Si faltan API keys segun el proveedor elegido, la app fallara al arrancar con un error de validacion claro.
 
+## Tests (local)
+
+Los tests se ejecutan en tu maquina con el entorno de desarrollo; **`docker-compose-dev.yml` solo levanta la API** (no instala ni lanza `pytest` en contenedor).
+
+```bash
+uv sync --dev
+pytest
+```
+
+Algunos tests importan `app.main` y disparan la validacion de `Settings`: necesitas un `.env` coherente (por ejemplo `OPENAI_API_KEY` si `LLM_PROVIDER=openai`). Los tests del endpoint suelen simular la llamada al proveedor con `monkeypatch`.
+
 ## Servicio LLM (CAG)
 
 El servicio en `app/services/llm_service.py` usa el patron de mensajes:
 
-- `system`: rol del modelo + instrucciones + ejemplos historicos (`ESTIMATION_EXAMPLES`).
+- `system`: rol del modelo + instrucciones + ejemplos historicos (`CANONICAL_EXAMPLES` / formateo JSON).
 - `user`: transcripcion de la reunion a estimar.
 - `assistant`: estimacion generada por el modelo.
 
@@ -83,7 +102,7 @@ uv run streamlit run streamlit_app.py
 
 ## Ejecutar con Docker Compose (desarrollo)
 
-El archivo `docker-compose-dev.yml` esta preparado para desarrollo local con recarga en caliente (`--reload`) y montaje del codigo `./app:/app/app`.
+El archivo `docker-compose-dev.yml` esta preparado **solo para levantar la API** en desarrollo local: recarga en caliente (`--reload`) y montaje del codigo `./app:/app/app`. Para tests usa `uv sync --dev` y `pytest` en local (ver seccion **Tests**).
 
 Pasos:
 

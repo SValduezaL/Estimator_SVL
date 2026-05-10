@@ -1,4 +1,5 @@
-# Compose para desarrollo local con recarga en caliente.
+# Compose para desarrollo local con recarga en caliente (solo servicio API).
+# Tests: en el host con `uv sync --dev` y `pytest` (no se instalan en esta imagen).
 # Producción: quitar el volumen de código, quitar --reload y usar variables
 # de entorno del orquestador en lugar de montar .env si aplica.
 
