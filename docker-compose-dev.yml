@@ -4,14 +4,31 @@
 # de entorno del orquestador en lugar de montar .env si aplica.
 
 services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
   estimator:
     build:
       context: .
       dockerfile: Dockerfile
     image: estimator-svl:dev
+    depends_on:
+      redis:
+        condition: service_healthy
 
     ports:
       - "8000:8000"
+
+    environment:
+      REDIS_URL: redis://redis:6379/0
 
     # La app valida Settings al importar (app.config): hace falta .env coherente
     # con el proveedor LLM (p. ej. OPENAI_API_KEY). Parte de .env.example.

@@ -5,6 +5,8 @@ from functools import lru_cache
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.services.llm_pricing import provider_from_model
+
 
 class Settings(BaseSettings):
     app_name: str = Field(default="Estimador CAG API", min_length=3)
@@ -22,6 +24,13 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     temperature: float = Field(default=0.2, ge=0.0, le=1.0)
     max_tokens: int = Field(default=800, ge=100, le=4000)
+    # Fallback LiteLLM (opcional): segundo despliegue bajo el mismo route ``estimator``.
+    llm_fallback_model: str | None = Field(default=None)
+    llm_timeout_seconds: int = Field(default=120, ge=5, le=600)
+    llm_num_retries: int = Field(default=2, ge=0, le=10)
+    # Caché Redis (opcional): vacío = sin caché; p. ej. redis://redis:6379/0 en Compose
+    redis_url: str | None = Field(default=None)
+    cache_ttl_seconds: int = Field(default=86400, ge=60, le=604800)
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -72,6 +81,20 @@ class Settings(BaseSettings):
             raise ValueError("Si LLM_PROVIDER=openai, OPENAI_API_KEY es obligatoria.")
         if self.llm_provider == "anthropic" and not self.anthropic_api_key:
             raise ValueError("Si LLM_PROVIDER=anthropic, ANTHROPIC_API_KEY es obligatoria.")
+
+        if self.llm_fallback_model:
+            for mid in (self.llm_model, self.llm_fallback_model):
+                prov = provider_from_model(mid)
+                if prov == "openai" and not self.openai_api_key:
+                    raise ValueError(
+                        "LLM_FALLBACK_MODEL requiere OPENAI_API_KEY cuando el modelo "
+                        f"o el fallback usan OpenAI ({mid!r})."
+                    )
+                if prov == "anthropic" and not self.anthropic_api_key:
+                    raise ValueError(
+                        "LLM_FALLBACK_MODEL requiere ANTHROPIC_API_KEY cuando el modelo "
+                        f"o el fallback usan Anthropic ({mid!r})."
+                    )
         return self
 
 @lru_cache
