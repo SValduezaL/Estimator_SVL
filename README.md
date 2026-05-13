@@ -1,6 +1,6 @@
 # Estimador CAG
 
-FastAPI + Streamlit para estimar esfuerzo de desarrollo a partir de una **descripción estructurada del proyecto** (tipo, nivel de detalle y formato de salida). El backend inyecta contexto estático (ejemplos históricos) en cada prompt al LLM (patrón CAG), responde **solo en streaming SSE**, con caché Redis opcional y estimación de coste por tokens.
+FastAPI + Streamlit para estimar esfuerzo de desarrollo a partir de una **descripción estructurada del proyecto** (tipo, nivel de detalle y formato de salida). El backend inyecta contexto estático CAG mediante **plantillas Jinja2** (`app/prompts/estimation/…`: system, user y ejemplos few-shot por `project_type`), responde **solo en streaming SSE**, con caché Redis opcional, fallback/reintentos/timeouts en LiteLLM y estimación de coste por tokens.
 
 ## Arquitectura
 
@@ -8,9 +8,10 @@ FastAPI + Streamlit para estimar esfuerzo de desarrollo a partir de una **descri
 app/
 ├── routers/        # POST /api/v1/estimate (solo streaming SSE)
 ├── services/       # llm_service, llm_wrapper, llm_cache, llm_pricing, evaluation
-├── context/        # Ejemplos canónicos few-shot (CANONICAL_EXAMPLES) y formateadores
+├── prompts/        # Bundles Jinja2 versionados (CAG): registry, loader, estimation/v1|v2
 ├── schemas/        # EstimationRequest / enums (app/schemas/estimation.py)
 ├── fixtures/       # Datos de prueba (p. ej. transcripciones largas)
+├── dependencies.py  # FastAPI: EstimationCache (Redis) + LLMWrapper inyectables
 └── config.py       # Configuración vía Pydantic BaseSettings + .env
 streamlit_app.py    # Formulario + cliente HTTP con streaming SSE
 ```
@@ -24,6 +25,15 @@ Módulos clave en `app/services/`:
 | `llm_cache.py` | Caché Redis (`EstimationCache`) y chunking SSE |
 | `llm_pricing.py` | Tabla de costes por modelo y estimación `cost_usd` |
 | `evaluation.py` | Validación heurística de Markdown (uso interno / tests) |
+
+Prompts CAG (`app/prompts/`):
+
+| Recurso | Responsabilidad |
+|---|---|
+| `registry.py` | Bundles de estimación (`estimation-v1`, `estimation-v2`), bundle por defecto y constante `ESTIMATION_PROMPT_VERSION` (contrato API / métricas). |
+| `loader.py` | Renderiza `system.j2` + `user.j2` con variables de la petición y resuelve includes (`examples.j2`, escenarios por `project_type`). |
+
+Estructura típica de un bundle: `estimation/<versión>/system.j2`, `user.j2`, `examples.j2` y `examples/<project_type>/scenario_*.j2`.
 
 ## Requisitos
 
@@ -80,10 +90,11 @@ Notas:
 - `.env` contiene los valores reales locales y está ignorado por git.
 - Si `LLM_PROVIDER` no existe en `LLM_MODELS_BY_PROVIDER` o `LLM_MODEL` no pertenece a ese proveedor, la app falla al arrancar con error de validación.
 - Si faltan API keys según el proveedor elegido, la app falla al arrancar con un error de validación claro.
+- Si defines `LLM_FALLBACK_MODEL`, la validación exige también la API key del proveedor que corresponda al modelo principal **y** al de fallback (OpenAI y/o Anthropic según aplique).
 
 ## Tests (local)
 
-Los tests se ejecutan en tu máquina con el entorno de desarrollo; **`docker-compose-dev.yml` solo levanta la API** (no instala ni lanza `pytest` en contenedor).
+Los tests se ejecutan en tu máquina con el entorno de desarrollo; **`docker-compose-dev.yml` levanta la API y Redis para desarrollo** (no instala ni lanza `pytest` en contenedor).
 
 ```bash
 uv sync --dev
@@ -96,8 +107,8 @@ Algunos tests importan `app.main` y disparan la validación de `Settings`: neces
 
 El servicio en `app/services/llm_service.py` usa el patrón de mensajes:
 
-- `system`: rol del modelo, instrucciones por tipo/detalle/formato de salida y ejemplos históricos (`CANONICAL_EXAMPLES`; el formato few-shot se deriva del `output_format` de la petición).
-- `user`: descripción del proyecto y metadatos (`project_type`, `detail_level`, `output_format`).
+- `system`: rol del modelo, instrucciones por tipo/detalle/formato de salida y bloque few-shot renderizado desde Jinja (`app/prompts/estimation/…`; el estilo de los ejemplos sigue el `output_format` de la petición).
+- `user`: descripción del proyecto y metadatos (`project_type`, `detail_level`, `output_format`), también desde plantillas.
 - `assistant`: estimación generada por el modelo (en el cliente se reconstruye a partir de los eventos `token`).
 
 La selección de proveedor se hace con `LLM_PROVIDER` y el modelo con `LLM_MODEL`.
@@ -134,6 +145,11 @@ Para soportar nuevos LLM en el futuro:
 3. Implementa un nuevo adaptador en `app/services/llm_service.py` que cumpla el contrato `BaseProviderClient`.
 4. Registra el adaptador en `PROVIDER_CLIENTS`.
 
+Para evolucionar el CAG (nuevos ejemplos, tono o estructura del system prompt):
+
+1. Crea o ajusta plantillas bajo `app/prompts/estimation/<nueva_subcarpeta>/` y registra un `PromptBundle` en `app/prompts/registry.py`.
+2. Apunta el bundle por defecto (`DEFAULT_ESTIMATION_BUNDLE`) al `public_id` que quieras exponer en `prompt_version` / métricas SSE.
+
 ## Ejecutar API
 
 ```bash
@@ -150,7 +166,7 @@ uv run streamlit run streamlit_app.py
 
 ## Ejecutar con Docker Compose (desarrollo)
 
-El archivo `docker-compose-dev.yml` está preparado **solo para levantar la API** en desarrollo local: recarga en caliente (`--reload`) y montaje del código `./app:/app/app`. Para tests usa `uv sync --dev` y `pytest` en local (ver sección **Tests**).
+El archivo `docker-compose-dev.yml` está preparado para desarrollo local: **API** con recarga en caliente (`--reload`), montaje del código `./app:/app/app`, y **Redis** para probar caché con la misma `REDIS_URL` que inyecta Compose. Para tests usa `uv sync --dev` y `pytest` en local (ver sección **Tests**).
 
 Pasos:
 
@@ -189,6 +205,7 @@ docker compose -f docker-compose-dev.yml down
 
 Notas:
 
+- Compose levanta **`redis`** (puerto host `6379`, con healthcheck) y **`estimator`**: la API arranca con `REDIS_URL=redis://redis:6379/0` definido en el propio compose (caché activa en ese flujo). Para ejecutar la API en el host sin Redis, deja `REDIS_URL` vacío en `.env` y usa `uv run python -m uvicorn …` (ver **Ejecutar API**).
 - El servicio expone el puerto `8000`.
 - El `healthcheck` apunta a `GET /health`.
 - Si en Windows/Mac no detecta cambios con `--reload`, habilita `WATCHFILES_FORCE_POLLING=true` en el servicio.

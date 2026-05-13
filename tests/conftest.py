@@ -8,8 +8,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.config import Settings, get_settings
-from app.context.examples import CANONICAL_EXAMPLES
 from app.main import app
+
+# Contenido simulado para respuestas no streaming del stub (los tests del endpoint usan solo stream).
+_LITELLM_STUB_COMPLETION_MARKDOWN = "## Estimación de prueba\n\nContenido mínimo para el doble de LiteLLM."
 
 
 def _test_settings() -> Settings:
@@ -33,8 +35,6 @@ def test_settings() -> Settings:
 def litellm_stub_log(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
     """Sustituye LiteLLM/Router por dobles que registran kwargs y devuelven respuesta fija."""
     log: list[dict] = []
-    est_md = CANONICAL_EXAMPLES[0].estimation_markdown
-
     def make_response(finish_reason: str) -> object:
         usage = type(
             "U",
@@ -45,7 +45,7 @@ def litellm_stub_log(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
                 "total_tokens": 1801,
             },
         )()
-        msg = type("M", (), {"content": est_md})()
+        msg = type("M", (), {"content": _LITELLM_STUB_COMPLETION_MARKDOWN})()
         choice = type("C", (), {"finish_reason": finish_reason, "message": msg})()
         return type("R", (), {"choices": [choice], "usage": usage, "model": "gpt-4o-mini"})()
 
