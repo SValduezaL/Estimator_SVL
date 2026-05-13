@@ -1,0 +1,104 @@
+{# Escenario 3 — onboarding RRHH #}
+{% if detail_level == "summary" %}
+{% if output_format == "phases_table" %}
+<reference_estimation id="3" project_domain="{{ project_type }}">
+<summary_cliente>RRHH: portal checklist onboarding con firma de políticas.</summary_cliente>
+<reference_output>
+| Fase | Entregable principal | Horas (rango) | Riesgos / notas |
+|------|----------------------|---------------|-----------------|
+| MVP | Formularios + PDF | 48–60 | firma legal |
+**Totales:** ~54 h · ~3.240 EUR · **3 sem**
+</reference_output>
+</reference_estimation>
+{% elif output_format == "line_items" %}
+<reference_estimation id="3" project_domain="{{ project_type }}">
+<summary_cliente>RRHH: portal checklist onboarding con firma de políticas.</summary_cliente>
+<reference_output>
+| Tarea | Horas | Coste (EUR) |
+|------|------:|------------|
+| Checklist configurable | 16 | 960 |
+| Firma simple + PDF | 14 | 840 |
+| Notificaciones manager | 8 | 480 |
+| UI + QA | 16 | 960 |
+**Totales:** 54 h · 3.240 EUR · **3 sem**
+</reference_output>
+</reference_estimation>
+{% elif output_format == "narrative" %}
+<reference_estimation id="3" project_domain="{{ project_type }}">
+<summary_cliente>RRHH: portal checklist onboarding con firma de políticas.</summary_cliente>
+<reference_output>
+Portal interno con **checklist** y PDF de acuse. **~54 h**, **3.240 EUR**, **3 semanas**.
+</reference_output>
+</reference_estimation>
+{% endif %}
+{% elif detail_level == "medium" %}
+{% if output_format == "phases_table" %}
+<reference_estimation id="3" project_domain="{{ project_type }}">
+<summary_cliente>RRHH: portal checklist onboarding con firma de políticas.</summary_cliente>
+<reference_output>
+| Fase | Entregable principal | Horas (rango) | Riesgos / notas |
+|------|----------------------|---------------|-----------------|
+| Dominio | plantillas por rol | 14–18 | cambios legales |
+| Integración | HRIS read | 16–22 | campos |
+| UX | progreso y recordatorios | 12–16 | adopción |
+| QA | escenarios multi-rol | 10–14 | datos ficticios |
+**Totales:** ~52–70 h · **3–4 sem**
+</reference_output>
+</reference_estimation>
+{% elif output_format == "line_items" %}
+<reference_estimation id="3" project_domain="{{ project_type }}">
+<summary_cliente>RRHH: portal checklist onboarding con firma de políticas.</summary_cliente>
+<reference_output>
+| Tarea | Horas | Coste (EUR) |
+|------|------:|------------|
+| Plantillas por sede/rol | 18 | 1.080 |
+| Conector HRIS | 20 | 1.200 |
+| Flujo progreso + emails | 14 | 840 |
+| PDF y almacenamiento | 12 | 720 |
+| QA + piloto | 12 | 720 |
+### Totales: 76 h · 4.560 EUR · 3–4 sem
+</reference_output>
+</reference_estimation>
+{% elif output_format == "narrative" %}
+<reference_estimation id="3" project_domain="{{ project_type }}">
+<summary_cliente>RRHH: portal checklist onboarding con firma de políticas.</summary_cliente>
+<reference_output>
+**Alcance:** sin firma cualificada en v1. **Esfuerzo:** **~76 h** y **4.560 EUR**.
+</reference_output>
+</reference_estimation>
+{% endif %}
+{% elif detail_level == "detailed" %}
+{% if output_format == "phases_table" %}
+<reference_estimation id="3" project_domain="{{ project_type }}">
+<summary_cliente>RRHH: portal checklist onboarding con firma de políticas.</summary_cliente>
+<reference_output>
+| Fase | Entregable principal | Horas (rango) | Riesgos / notas |
+|------|----------------------|---------------|-----------------|
+| Legal | versionado políticas | 10–14 | trazabilidad · **confidence_pct 78** |
+| Integración | HRIS write mínimo | 18–24 | permisos · **confidence_pct 56** |
+| Seguridad | PII y retención | 12–16 | RGPD · **confidence_pct 81** |
+| Entrega | piloto legal | 14–18 | cambios copy · **confidence_pct 69** |
+</reference_output>
+</reference_estimation>
+{% elif output_format == "line_items" %}
+<reference_estimation id="3" project_domain="{{ project_type }}">
+<summary_cliente>RRHH: portal checklist onboarding con firma de políticas.</summary_cliente>
+<reference_output>
+| Tarea | Horas | Coste (EUR) | confidence_pct |
+|------|------:|------------:|---------------:|
+| Versionado legal + diff | 14 | 840 | 77 |
+| HRIS scope mínimo write | 22 | 1.320 | 54 |
+| Cifrado en reposo + claves | 12 | 720 | 82 |
+| UX accesible | 16 | 960 | 71 |
+| Piloto + ajustes | 14 | 840 | 70 |
+</reference_output>
+</reference_estimation>
+{% elif output_format == "narrative" %}
+<reference_estimation id="3" project_domain="{{ project_type }}">
+<summary_cliente>RRHH: portal checklist onboarding con firma de políticas.</summary_cliente>
+<reference_output>
+**confidence_pct 54–82:** HRIS write y requisitos legales dominan **78–98 h**.
+</reference_output>
+</reference_estimation>
+{% endif %}
+{% endif %}

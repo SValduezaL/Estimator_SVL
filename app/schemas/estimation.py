@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import Enum
 from typing import Final
 
 from pydantic import BaseModel, Field
 
-from app.context.examples import ExampleFormat
-from app.services.llm_service import GenerationOptions
-
-ESTIMATION_PROMPT_VERSION: Final[str] = "2026-05-13-v1"
+ESTIMATION_PROMPT_VERSION: Final[str] = "estimation-v1"
 
 
 class ProjectType(str, Enum):
@@ -53,10 +51,17 @@ OUTPUT_FORMAT_LABELS: dict[OutputFormat, str] = {
 }
 
 
-def _example_format_for_output(fmt: OutputFormat) -> ExampleFormat:
-    if fmt == OutputFormat.NARRATIVE:
-        return "narrative"
-    return "markdown"
+@dataclass
+class GenerationOptions:
+    """Opciones por solicitud para caché y llamada al LLM (sin composición de prompts)."""
+
+    model: str | None = None
+    max_tokens: int | None = None
+    thinking_budget: int | None = None
+    skip_cache: bool = False
+    project_type: str | None = None
+    detail_level: str | None = None
+    output_format: str | None = None
 
 
 class EstimationRequest(BaseModel):
@@ -73,10 +78,6 @@ class EstimationRequest(BaseModel):
 
     def to_generation_options(self) -> GenerationOptions:
         return GenerationOptions(
-            preprocessing="none",
-            example_format=_example_format_for_output(self.output_format),
-            num_examples=None,
-            use_examples=True,
             model=None,
             max_tokens=None,
             thinking_budget=None,

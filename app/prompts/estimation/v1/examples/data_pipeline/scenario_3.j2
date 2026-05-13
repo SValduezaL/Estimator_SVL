@@ -1,0 +1,104 @@
+{# Escenario 3 — features ML nocturnas #}
+{% if detail_level == "summary" %}
+{% if output_format == "phases_table" %}
+<reference_estimation id="3" project_domain="{{ project_type }}">
+<summary_cliente>Producto: jobs nocturnos que materializan features para modelo ranking en producción.</summary_cliente>
+<reference_output>
+| Fase | Entregable principal | Horas (rango) | Riesgos / notas |
+|------|----------------------|---------------|-----------------|
+| MVP | ETL + store offline | 72–90 | leakage |
+**Totales:** ~80 h · ~4.800 EUR · **5 sem**
+</reference_output>
+</reference_estimation>
+{% elif output_format == "line_items" %}
+<reference_estimation id="3" project_domain="{{ project_type }}">
+<summary_cliente>Producto: jobs nocturnos que materializan features para modelo ranking en producción.</summary_cliente>
+<reference_output>
+| Tarea | Horas | Coste (EUR) |
+|------|------:|------------|
+| Agregaciones ventana 30d | 22 | 1.320 |
+| Join eventos + anti-leakage | 26 | 1.560 |
+| Materialización tablas feature | 20 | 1.200 |
+| Validación drift básica | 12 | 720 |
+**Totales:** 80 h · 4.800 EUR · **5 sem**
+</reference_output>
+</reference_estimation>
+{% elif output_format == "narrative" %}
+<reference_estimation id="3" project_domain="{{ project_type }}">
+<summary_cliente>Producto: jobs nocturnos que materializan features para modelo ranking en producción.</summary_cliente>
+<reference_output>
+Features con **anti-leakage** temporal y materialización nightly. **~80 h**, **4.800 EUR**, **5 semanas**.
+</reference_output>
+</reference_estimation>
+{% endif %}
+{% elif detail_level == "medium" %}
+{% if output_format == "phases_table" %}
+<reference_estimation id="3" project_domain="{{ project_type }}">
+<summary_cliente>Producto: jobs nocturnos que materializan features para modelo ranking en producción.</summary_cliente>
+<reference_output>
+| Fase | Entregable principal | Horas (rango) | Riesgos / notas |
+|------|----------------------|---------------|-----------------|
+| Diseño | definición features + PIT | 16–20 | leakage |
+| Pipeline | Spark/dbt + particiones | 28–36 | skew |
+| Calidad | tests PSI simple | 12–16 | drift |
+| Entrega | contrato con MLflow | 10–14 | versionado |
+**Totales:** ~66–86 h · **4–5 sem**
+</reference_output>
+</reference_estimation>
+{% elif output_format == "line_items" %}
+<reference_estimation id="3" project_domain="{{ project_type }}">
+<summary_cliente>Producto: jobs nocturnos que materializan features para modelo ranking en producción.</summary_cliente>
+<reference_output>
+| Tarea | Horas | Coste (EUR) |
+|------|------:|------------|
+| Diseño PIT + ventanas | 18 | 1.080 |
+| Pipeline nightly Spark | 30 | 1.800 |
+| Feature store tablas | 20 | 1.200 |
+| Monitoreo PSI + alertas | 14 | 840 |
+| Integración MLflow metadata | 12 | 720 |
+### Totales: 94 h · 5.640 EUR · 4–5 sem
+</reference_output>
+</reference_estimation>
+{% elif output_format == "narrative" %}
+<reference_estimation id="3" project_domain="{{ project_type }}">
+<summary_cliente>Producto: jobs nocturnos que materializan features para modelo ranking en producción.</summary_cliente>
+<reference_output>
+**Alcance:** sin serving online sub-100 ms en v1. **Esfuerzo:** **~94 h** y **5.640 EUR**.
+</reference_output>
+</reference_estimation>
+{% endif %}
+{% elif detail_level == "detailed" %}
+{% if output_format == "phases_table" %}
+<reference_estimation id="3" project_domain="{{ project_type }}">
+<summary_cliente>Producto: jobs nocturnos que materializan features para modelo ranking en producción.</summary_cliente>
+<reference_output>
+| Fase | Entregable principal | Horas (rango) | Riesgos / notas |
+|------|----------------------|---------------|-----------------|
+| Ciencia | auditoría leakage | 14–18 | sesgo · **confidence_pct 66** |
+| Ingeniería | particionado + UDF | 24–32 | hotspots · **confidence_pct 60** |
+| MLOps | línea base drift | 12–16 | umbrales · **confidence_pct 72** |
+| Coste | spot/preemptible | 10–14 | reintentos · **confidence_pct 78** |
+</reference_output>
+</reference_estimation>
+{% elif output_format == "line_items" %}
+<reference_estimation id="3" project_domain="{{ project_type }}">
+<summary_cliente>Producto: jobs nocturnos que materializan features para modelo ranking en producción.</summary_cliente>
+<reference_output>
+| Tarea | Horas | Coste (EUR) | confidence_pct |
+|------|------:|------------:|---------------:|
+| Matriz leakage + fixes | 20 | 1.200 | 64 |
+| Optimización shuffle/skew | 22 | 1.320 | 58 |
+| PSI + alertas multi-feature | 16 | 960 | 70 |
+| Lineage features → modelo | 14 | 840 | 75 |
+| Cost guardrails cluster | 12 | 720 | 80 |
+</reference_output>
+</reference_estimation>
+{% elif output_format == "narrative" %}
+<reference_estimation id="3" project_domain="{{ project_type }}">
+<summary_cliente>Producto: jobs nocturnos que materializan features para modelo ranking en producción.</summary_cliente>
+<reference_output>
+**confidence_pct 58–80:** skew y leakage empujan **96–124 h** si el volumen de eventos crece 3× respecto al piloto.
+</reference_output>
+</reference_estimation>
+{% endif %}
+{% endif %}

@@ -1,0 +1,105 @@
+{# Escenario 2 — préstamo portátiles IT #}
+{% if detail_level == "summary" %}
+{% if output_format == "phases_table" %}
+<reference_estimation id="2" project_domain="{{ project_type }}">
+<summary_cliente>IT: workflow préstamo de portátiles con inventario y recordatorios.</summary_cliente>
+<reference_output>
+| Fase | Entregable principal | Horas (rango) | Riesgos / notas |
+|------|----------------------|---------------|-----------------|
+| MVP | Form + stock + email | 40–52 | duplicados reserva |
+**Totales:** ~46 h · ~2.760 EUR · **3 sem** · 1 full-stack
+</reference_output>
+</reference_estimation>
+{% elif output_format == "line_items" %}
+<reference_estimation id="2" project_domain="{{ project_type }}">
+<summary_cliente>IT: workflow préstamo de portátiles con inventario y recordatorios.</summary_cliente>
+<reference_output>
+| Tarea | Horas | Coste (EUR) |
+|------|------:|------------|
+| Modelo activos y reservas | 12 | 720 |
+| Flujo aprobación manager | 10 | 600 |
+| Recordatorios y devolución | 8 | 480 |
+| UI interna | 14 | 840 |
+| QA | 6 | 360 |
+**Totales:** 50 h · 3.000 EUR · **3 sem**
+</reference_output>
+</reference_estimation>
+{% elif output_format == "narrative" %}
+<reference_estimation id="2" project_domain="{{ project_type }}">
+<summary_cliente>IT: workflow préstamo de portátiles con inventario y recordatorios.</summary_cliente>
+<reference_output>
+Flujo simple con **stock único** por sede y recordatorios por email. **~50 h**, **3.000 EUR**, **3 semanas**.
+</reference_output>
+</reference_estimation>
+{% endif %}
+{% elif detail_level == "medium" %}
+{% if output_format == "phases_table" %}
+<reference_estimation id="2" project_domain="{{ project_type }}">
+<summary_cliente>IT: workflow préstamo de portátiles con inventario y recordatorios.</summary_cliente>
+<reference_output>
+| Fase | Entregable principal | Horas (rango) | Riesgos / notas |
+|------|----------------------|---------------|-----------------|
+| Integración | LDAP grupos | 10–14 | sincronía |
+| Dominio | reservas + choques | 14–18 | solapes |
+| UX | calendario interno | 12–16 | zona horaria |
+| Ops | logs y export CSV | 8–12 | PII |
+**Totales:** ~44–60 h · **3–4 sem**
+</reference_output>
+</reference_estimation>
+{% elif output_format == "line_items" %}
+<reference_estimation id="2" project_domain="{{ project_type }}">
+<summary_cliente>IT: workflow préstamo de portátiles con inventario y recordatorios.</summary_cliente>
+<reference_output>
+| Tarea | Horas | Coste (EUR) |
+|------|------:|------------|
+| LDAP + roles | 14 | 840 |
+| Motor reservas | 16 | 960 |
+| UI calendario y conflictos | 18 | 1.080 |
+| Jobs recordatorio | 8 | 480 |
+| CSV inventario + QA | 10 | 600 |
+### Totales: 66 h · 3.960 EUR · 3–4 sem
+</reference_output>
+</reference_estimation>
+{% elif output_format == "narrative" %}
+<reference_estimation id="2" project_domain="{{ project_type }}">
+<summary_cliente>IT: workflow préstamo de portátiles con inventario y recordatorios.</summary_cliente>
+<reference_output>
+**Alcance:** sin integración MDM profunda en v1. **Esfuerzo:** **~66 h** y **3.960 EUR**.
+</reference_output>
+</reference_estimation>
+{% endif %}
+{% elif detail_level == "detailed" %}
+{% if output_format == "phases_table" %}
+<reference_estimation id="2" project_domain="{{ project_type }}">
+<summary_cliente>IT: workflow préstamo de portátiles con inventario y recordatorios.</summary_cliente>
+<reference_output>
+| Fase | Entregable principal | Horas (rango) | Riesgos / notas |
+|------|----------------------|---------------|-----------------|
+| Seguridad | PII en logs | 8–12 | masking · **confidence_pct 80** |
+| Dominio | anti-solape transaccional | 16–22 | locks · **confidence_pct 67** |
+| Integración | LDAP edge cases | 10–14 | grupos anidados · **confidence_pct 62** |
+| Entrega | piloto 80 usuarios | 12–16 | soporte · **confidence_pct 74** |
+</reference_output>
+</reference_estimation>
+{% elif output_format == "line_items" %}
+<reference_estimation id="2" project_domain="{{ project_type }}">
+<summary_cliente>IT: workflow préstamo de portátiles con inventario y recordatorios.</summary_cliente>
+<reference_output>
+| Tarea | Horas | Coste (EUR) | confidence_pct |
+|------|------:|------------:|---------------:|
+| Transacciones serializables | 12 | 720 | 68 |
+| LDAP sync incremental | 14 | 840 | 61 |
+| UI WCAG AA parcial | 18 | 1.080 | 72 |
+| Retención logs 90d | 8 | 480 | 83 |
+| Piloto + encuesta | 10 | 600 | 76 |
+</reference_output>
+</reference_estimation>
+{% elif output_format == "narrative" %}
+<reference_estimation id="2" project_domain="{{ project_type }}">
+<summary_cliente>IT: workflow préstamo de portátiles con inventario y recordatorios.</summary_cliente>
+<reference_output>
+**Rango 62–83 confidence_pct** en bloque LDAP y concurrencia. **Horas:** 62–78.
+</reference_output>
+</reference_estimation>
+{% endif %}
+{% endif %}

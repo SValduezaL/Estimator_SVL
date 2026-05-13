@@ -14,6 +14,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.config import Settings, get_settings
 from app.dependencies import get_llm_wrapper
+from app.prompts.loader import DEFAULT_ESTIMATION_TEMPLATE_VERSION
 from app.schemas.estimation import ESTIMATION_PROMPT_VERSION, EstimationRequest
 from app.services.llm_service import build_estimation_cache_inputs
 from app.services.llm_wrapper import LLMWrapper
@@ -35,8 +36,8 @@ async def create_estimation_stream(
     opts = request.to_generation_options()
     system_prompt, user_message, model_used, max_tokens, thinking_budget = build_estimation_cache_inputs(
         settings=settings,
-        description=request.description,
-        opts=opts,
+        request=request,
+        template_version=DEFAULT_ESTIMATION_TEMPLATE_VERSION,
     )
 
     async def event_generator() -> AsyncIterator[dict]:

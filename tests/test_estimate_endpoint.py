@@ -39,6 +39,7 @@ def test_stream_emits_token_metrics_done(client, litellm_stub_log: list[dict]) -
 
     messages = _first_router_kwargs(litellm_stub_log)["messages"]
     user = next(m["content"] for m in messages if m["role"] == "user")
+    assert "<project_description>" in user
     assert "web_saas" in user
     assert "medium" in user
     assert "line_items" in user

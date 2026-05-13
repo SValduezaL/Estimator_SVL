@@ -1,6 +1,6 @@
 """Cliente LLM unificado con LiteLLM: Router (fallback), caché exacta y coste USD.
 
-La orquestación de prompts CAG sigue en ``llm_service.py``; este módulo se limita a
+La orquestación de prompts CAG vive en ``app/prompts/``; este módulo se limita a
 ``completion`` / streaming y Redis. Los precios USD por token están en ``llm_pricing.py``.
 Sin structlog (``logging`` estándar).
 """

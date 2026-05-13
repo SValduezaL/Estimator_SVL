@@ -3,8 +3,10 @@
 Este módulo centraliza:
 - Contratos de proveedor LLM.
 - Adaptadores concretos (OpenAI, Anthropic).
-- Construcción de prompts (system + user) con contexto estático few-shot.
 - Normalización de respuesta y uso de tokens en un formato uniforme.
+
+La composición de prompts (system/user) vive en ``app/prompts/`` y se invoca vía
+``render_estimation_prompt`` desde ``build_estimation_cache_inputs``.
 """
 
 from abc import ABC, abstractmethod
@@ -15,29 +17,8 @@ from anthropic import Anthropic
 from openai import OpenAI
 
 from app.config import Settings, get_settings
-from app.context.examples import (
-    CANONICAL_EXAMPLES,
-    ExampleFormat,
-    format_examples_for_prompt,
-    select_examples,
-)
-
-
-@dataclass
-class GenerationOptions:
-    """Opciones por solicitud para construir el prompt y la llamada al LLM."""
-
-    preprocessing: str = "none"
-    example_format: ExampleFormat = "markdown"
-    num_examples: int | None = None
-    use_examples: bool = True
-    model: str | None = None
-    max_tokens: int | None = None
-    thinking_budget: int | None = None
-    skip_cache: bool = False
-    project_type: str | None = None
-    detail_level: str | None = None
-    output_format: str | None = None
+from app.prompts.loader import render_estimation_prompt
+from app.schemas.estimation import EstimationRequest
 
 
 @dataclass
@@ -323,110 +304,15 @@ def get_provider_client(settings: Settings) -> BaseProviderClient:
     return provider_cls(settings)
 
 
-def _structured_shape_instructions(opts: GenerationOptions) -> str:
-    """Instrucciones de forma y extensión según enums de la petición."""
-    pt = opts.project_type or "web_saas"
-    dl = opts.detail_level or "medium"
-    of = opts.output_format or "line_items"
-
-    type_hints = {
-        "mobile_app": "Prioriza cliente móvil, stores, offline/sync si aplica, y UX táctil.",
-        "web_saas": "Prioriza multi-tenant, auth, roles, API y despliegue web.",
-        "internal_tool": "Prioriza integración con sistemas existentes, permisos internos y mantenibilidad.",
-        "data_pipeline": "Prioriza fuentes de datos, calidad, orquestación, observabilidad y coste de cómputo.",
-    }
-    detail_hints = {
-        "summary": "Extensión breve: hasta ~30 líneas; bullets compactos; pocos supuestos.",
-        "medium": "Extensión media: secciones claras con desglose útil y supuestos explícitos.",
-        "detailed": "Extensión alta: desglose fino, riesgos, supuestos, dependencias y alternativas.",
-    }
-    format_hints = {
-        "phases_table": (
-            "Formato de salida: usa una tabla Markdown por **fases** con columnas "
-            "tipo `Fase | Entregable principal | Horas (rango) | Riesgos / notas`."
-        ),
-        "line_items": (
-            "Formato de salida: tabla Markdown `| Tarea | Horas | Coste (EUR) |` "
-            "como en los ejemplos, más secciones **Totales**, **Equipo recomendado** y **Duración estimada**."
-        ),
-        "narrative": (
-            "Formato de salida: narrativa en párrafos y listas; puedes omitir tabla si no aporta, "
-            "pero mantén cifras de esfuerzo, coste y plazo comprensibles."
-        ),
-    }
-
-    return (
-        f"Contexto de tipo de proyecto (`{pt}`): {type_hints.get(pt, '')}\n"
-        f"Nivel de detalle (`{dl}`): {detail_hints.get(dl, '')}\n"
-        f"{format_hints.get(of, format_hints['line_items'])}\n"
-    )
-
-
-def build_system_prompt(opts: GenerationOptions | None = None) -> str:
-    """Construye el mensaje `system` con instrucciones y ejemplos CAG."""
-    opts = opts or GenerationOptions()
-    if not opts.use_examples:
-        examples_block = ""
-    else:
-        n = len(CANONICAL_EXAMPLES) if opts.num_examples is None else opts.num_examples
-        examples_block = format_examples_for_prompt(select_examples(n), fmt=opts.example_format)
-
-    examples_section = (
-        f"Usa como referencia los siguientes ejemplos históricos:\n{examples_block}\n\n"
-        if examples_block
-        else ""
-    )
-    shape = _structured_shape_instructions(opts) if opts.project_type else ""
-    return (
-        "Eres un estimador senior de software especializado en discovery técnico, "
-        "estimación por tareas y análisis de riesgos.\n\n"
-        "Tu objetivo es generar estimaciones accionables y realistas basadas en "
-        "ejemplos históricos y en la descripción estructurada del proyecto.\n\n"
-        f"{shape}"
-        f"{examples_section}"
-        "Responde en español. Incluye siempre, de forma coherente con el nivel de detalle pedido:\n"
-        "- Resumen del requerimiento\n"
-        "- Alcance funcional y exclusiones\n"
-        "- Supuestos y riesgos\n"
-        "- Estimación de esfuerzo (horas o rango)\n"
-        "- Coste orientativo (EUR) y tarifa de referencia si aplica\n"
-        "- Duración sugerida y equipo recomendado\n\n"
-        "No inventes integraciones no mencionadas. Si hay ambigüedad, declara supuestos explícitamente."
-    )
-
-
-def build_structured_user_message(
-    description: str,
-    *,
-    project_type: str,
-    detail_level: str,
-    output_format: str,
-) -> str:
-    """Mensaje de usuario con la descripción y metadatos de la petición."""
-    return (
-        "Genera una estimación de esfuerzo de desarrollo de software con estos parámetros:\n\n"
-        f"- Tipo de proyecto: {project_type}\n"
-        f"- Nivel de detalle: {detail_level}\n"
-        f"- Formato de salida: {output_format}\n\n"
-        "Descripción del proyecto:\n"
-        f"{description}\n"
-    )
-
-
 def build_estimation_cache_inputs(
     *,
     settings: Settings,
-    description: str,
-    opts: GenerationOptions,
+    request: EstimationRequest,
+    template_version: str = "v1",
 ) -> tuple[str, str, str, int, int | None]:
     """Textos y parámetros que entran en la clave de caché y en la llamada al modelo."""
-    system_prompt = build_system_prompt(opts)
-    user_message = build_structured_user_message(
-        description,
-        project_type=opts.project_type or "web_saas",
-        detail_level=opts.detail_level or "medium",
-        output_format=opts.output_format or "line_items",
-    )
+    system_prompt, user_message = render_estimation_prompt(request, version=template_version)
+    opts = request.to_generation_options()
     model = opts.model if opts.model is not None else settings.llm_model
     max_tokens = opts.max_tokens if opts.max_tokens is not None else settings.max_tokens
     return system_prompt, user_message, model, max_tokens, opts.thinking_budget

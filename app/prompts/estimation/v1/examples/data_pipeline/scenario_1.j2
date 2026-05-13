@@ -1,0 +1,106 @@
+{# Escenario 1 — consolidación financiera diaria #}
+{% if detail_level == "summary" %}
+{% if output_format == "phases_table" %}
+<reference_estimation id="1" project_domain="{{ project_type }}">
+<summary_cliente>Finanzas: pipeline diario desde 3 fuentes operativas a tablas curadas en el lago.</summary_cliente>
+<reference_output>
+| Fase | Entregable principal | Horas (rango) | Riesgos / notas |
+|------|----------------------|---------------|-----------------|
+| MVP | Ingesta + DQ + orquestación | 88–108 | retrasos fuente |
+**Totales:** ~96 h · ~5.760 EUR · **5 sem** · data senior + mid
+</reference_output>
+</reference_estimation>
+{% elif output_format == "line_items" %}
+<reference_estimation id="1" project_domain="{{ project_type }}">
+<summary_cliente>Finanzas: pipeline diario desde 3 fuentes operativas a tablas curadas en el lago.</summary_cliente>
+<reference_output>
+| Tarea | Horas | Coste (EUR) |
+|------|------:|------------|
+| Ingesta incremental y esquemas | 24 | 1.440 |
+| Capa calidad (checks, cuarentena) | 28 | 1.680 |
+| Orquestación y SLAs | 18 | 1.080 |
+| Modelo curado + linaje | 20 | 1.200 |
+| Observabilidad | 14 | 840 |
+**Totales:** 104 h · 6.240 EUR · **5 sem**
+</reference_output>
+</reference_estimation>
+{% elif output_format == "narrative" %}
+<reference_estimation id="1" project_domain="{{ project_type }}">
+<summary_cliente>Finanzas: pipeline diario desde 3 fuentes operativas a tablas curadas en el lago.</summary_cliente>
+<reference_output>
+Pipeline con **linaje** documentado y cuarentena DQ. **~104 h**, **6.240 EUR**, **5 semanas**. Riesgo: ventanas de cierre contable variables.
+</reference_output>
+</reference_estimation>
+{% endif %}
+{% elif detail_level == "medium" %}
+{% if output_format == "phases_table" %}
+<reference_estimation id="1" project_domain="{{ project_type }}">
+<summary_cliente>Finanzas: pipeline diario desde 3 fuentes operativas a tablas curadas en el lago.</summary_cliente>
+<reference_output>
+| Fase | Entregable principal | Horas (rango) | Riesgos / notas |
+|------|----------------------|---------------|-----------------|
+| Ingesta | conectores + CDC parcial | 26–34 | esquema drift |
+| Calidad | reglas + cuarentena | 24–30 | falsos positivos |
+| Curado | dbt + contratos | 22–28 | breaking changes |
+| Ops | alertas retraso | 12–16 | pager |
+**Totales:** ~84–108 h · **5–6 sem**
+</reference_output>
+</reference_estimation>
+{% elif output_format == "line_items" %}
+<reference_estimation id="1" project_domain="{{ project_type }}">
+<summary_cliente>Finanzas: pipeline diario desde 3 fuentes operativas a tablas curadas en el lago.</summary_cliente>
+<reference_output>
+| Tarea | Horas | Coste (EUR) |
+|------|------:|------------|
+| CDC y deduplicación | 26 | 1.560 |
+| Reglas DQ + quarantine tables | 24 | 1.440 |
+| dbt tests + exposures | 22 | 1.320 |
+| Airflow/Dagster jobs | 16 | 960 |
+| Dashboard frescura + SLO | 16 | 960 |
+### Totales: 104 h · 6.240 EUR · 5–6 sem
+</reference_output>
+</reference_estimation>
+{% elif output_format == "narrative" %}
+<reference_estimation id="1" project_domain="{{ project_type }}">
+<summary_cliente>Finanzas: pipeline diario desde 3 fuentes operativas a tablas curadas en el lago.</summary_cliente>
+<reference_output>
+**Alcance:** sin ML en v1. **Esfuerzo:** **~104 h** y **6.240 EUR**. **Exclusiones:** backfill histórico >24 meses.
+</reference_output>
+</reference_estimation>
+{% endif %}
+{% elif detail_level == "detailed" %}
+{% if output_format == "phases_table" %}
+<reference_estimation id="1" project_domain="{{ project_type }}">
+<summary_cliente>Finanzas: pipeline diario desde 3 fuentes operativas a tablas curadas en el lago.</summary_cliente>
+<reference_output>
+| Fase | Entregable principal | Horas (rango) | Riesgos / notas |
+|------|----------------------|---------------|-----------------|
+| Gobernanza | catálogo + linaje automático | 16–22 | metadatos · **confidence_pct 72** |
+| Ingesta | CDC + compensaciones | 32–42 | orden eventos · **confidence_pct 58** |
+| Calidad | SLI DQ + cuarentena | 22–28 | negocio · **confidence_pct 64** |
+| Coste | optimización particiones | 12–16 | exploding cost · **confidence_pct 76** |
+</reference_output>
+</reference_estimation>
+{% elif output_format == "line_items" %}
+<reference_estimation id="1" project_domain="{{ project_type }}">
+<summary_cliente>Finanzas: pipeline diario desde 3 fuentes operativas a tablas curadas en el lago.</summary_cliente>
+<reference_output>
+| Tarea | Horas | Coste (EUR) | confidence_pct |
+|------|------:|------------:|---------------:|
+| Contrato eventos + idempotencia | 20 | 1.200 | 61 |
+| Linaje OpenLineage/Marquez | 18 | 1.080 | 69 |
+| DQ avanzado + acuerdos negocio | 26 | 1.560 | 57 |
+| Particionado y compactación | 14 | 840 | 74 |
+| Chaos data (retrasos simulados) | 12 | 720 | 71 |
+</reference_output>
+</reference_estimation>
+{% elif output_format == "narrative" %}
+<reference_estimation id="1" project_domain="{{ project_type }}">
+<summary_cliente>Finanzas: pipeline diario desde 3 fuentes operativas a tablas curadas en el lago.</summary_cliente>
+<reference_output>
+**confidence_pct 57–74:** CDC y cierre contable mueven el rango **108–132 h**.
+**Mitigación:** ventana de reconciliación manual documentada para T+1.
+</reference_output>
+</reference_estimation>
+{% endif %}
+{% endif %}
