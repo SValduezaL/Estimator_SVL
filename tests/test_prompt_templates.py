@@ -26,11 +26,37 @@ def _make_request(**overrides: object) -> EstimationRequest:
     return EstimationRequest(**base)
 
 
-def test_user_prompt_has_xml_project_description() -> None:
-    _system, user = render_estimation_prompt(_make_request())
+_PHASES_TABLE_KEYWORD = (
+    "| Fase | Entregable principal | Horas (rango) | Riesgos / notas |"
+)
+
+
+def test_description_literal_inside_project_description_block() -> None:
+    """El user renderizado incluye la descripción tal cual entre las etiquetas XML."""
+    desc = 'Literal con ñ, "comillas", <tag> y & entidades no escapadas en el JSON.'
+    _system, user = render_estimation_prompt(_make_request(description=desc))
     assert "<project_description>" in user
     assert "</project_description>" in user
-    assert "Descripción mínima válida" in user
+    i = user.index("<project_description>") + len("<project_description>")
+    j = user.index("</project_description>")
+    inner = user[i:j].strip("\n")
+    assert inner == desc
+
+
+def test_phases_table_system_has_format_keyword_narrative_does_not() -> None:
+    """Instrucción de columnas de fases solo en output_format=phases_table, no en narrative."""
+    sys_phases, _ = render_estimation_prompt(_make_request(output_format=OutputFormat.PHASES_TABLE))
+    sys_narr, _ = render_estimation_prompt(_make_request(output_format=OutputFormat.NARRATIVE))
+    assert _PHASES_TABLE_KEYWORD in sys_phases
+    assert _PHASES_TABLE_KEYWORD not in sys_narr
+
+
+def test_detailed_includes_per_phase_assumptions_instruction_summary_does_not() -> None:
+    """Modo detailed exige supuestos por fase; summary no incluye esa instrucción."""
+    sys_detailed, _ = render_estimation_prompt(_make_request(detail_level=DetailLevel.DETAILED))
+    sys_summary, _ = render_estimation_prompt(_make_request(detail_level=DetailLevel.SUMMARY))
+    assert "Supuestos por fase" in sys_detailed
+    assert "Supuestos por fase" not in sys_summary
 
 
 def test_detailed_adds_confidence_pct_instruction() -> None:
