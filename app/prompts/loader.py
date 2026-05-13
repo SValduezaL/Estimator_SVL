@@ -5,15 +5,23 @@
 
 from __future__ import annotations
 
+import hashlib
 from functools import lru_cache
 from pathlib import Path
 
+import structlog
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from app.prompts.registry import DEFAULT_ESTIMATION_BUNDLE, PromptBundle
 from app.schemas.estimation import EstimationRequest
 
 _PROMPTS_DIR = Path(__file__).resolve().parent
+_PROMPT_RENDER_PART_SEPARATOR = "\n\n---PROMPT_RENDER_SEPARATOR---\n\n"
+_log = structlog.get_logger(__name__)
+
+
+def _sha256_hex(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def build_estimation_jinja_environment() -> Environment:
@@ -78,4 +86,12 @@ def render_estimation_prompt(
     }
     system_t = env.get_template(f"estimation/{subdir}/system.j2")
     user_t = env.get_template(f"estimation/{subdir}/user.j2")
-    return system_t.render(**ctx).strip(), user_t.render(**ctx).strip()
+    system_prompt = system_t.render(**ctx).strip()
+    user_prompt = user_t.render(**ctx).strip()
+    combined = f"system{_PROMPT_RENDER_PART_SEPARATOR}{system_prompt}{_PROMPT_RENDER_PART_SEPARATOR}user{_PROMPT_RENDER_PART_SEPARATOR}{user_prompt}"
+    _log.info(
+        "estimation_prompt_rendered",
+        prompt_version=b.public_id,
+        content_sha256=_sha256_hex(combined),
+    )
+    return system_prompt, user_prompt
