@@ -1,0 +1,105 @@
+{# Escenario 3 — panel health customer success #}
+{% if detail_level == "summary" %}
+{% if output_format == "phases_table" %}
+<reference_estimation id="3" project_domain="{{ project_type }}">
+<summary_cliente>Panel CS: salud de cuenta, señales de churn y playbooks.</summary_cliente>
+<reference_output>
+| Fase | Entregable principal | Horas (rango) | Riesgos / notas |
+|------|----------------------|---------------|-----------------|
+| MVP | CRM read + métricas | 64–78 | calidad datos |
+**Totales:** ~70 h · ~4.200 EUR · **4 sem** · 1 full-stack
+</reference_output>
+</reference_estimation>
+{% elif output_format == "line_items" %}
+<reference_estimation id="3" project_domain="{{ project_type }}">
+<summary_cliente>Panel CS: salud de cuenta, señales de churn y playbooks.</summary_cliente>
+<reference_output>
+| Tarea | Horas | Coste (EUR) |
+|------|------:|------------|
+| Conectores CRM/Segment | 20 | 1.200 |
+| Modelo health score v1 | 18 | 1.080 |
+| UI dashboard + alertas | 22 | 1.320 |
+| Playbooks texto | 10 | 600 |
+**Totales:** 70 h · 4.200 EUR · **4 sem**
+</reference_output>
+</reference_estimation>
+{% elif output_format == "narrative" %}
+<reference_estimation id="3" project_domain="{{ project_type }}">
+<summary_cliente>Panel CS: salud de cuenta, señales de churn y playbooks.</summary_cliente>
+<reference_output>
+MVP **health score** v1 con datos de producto + CRM. **~70 h**, **4.200 EUR**, **4 semanas**. Riesgo: datos incompletos en cuentas antiguas.
+</reference_output>
+</reference_estimation>
+{% endif %}
+{% elif detail_level == "medium" %}
+{% if output_format == "phases_table" %}
+<reference_estimation id="3" project_domain="{{ project_type }}">
+<summary_cliente>Panel CS: salud de cuenta, señales de churn y playbooks.</summary_cliente>
+<reference_output>
+| Fase | Entregable principal | Horas (rango) | Riesgos / notas |
+|------|----------------------|---------------|-----------------|
+| Datos | ETL + dbt modelo | 22–28 | frescura diaria |
+| App | dashboard + filtros | 24–30 | rendimiento |
+| Acciones | alertas email/Slack | 14–18 | ruido alertas |
+| QA | datos sintéticos | 8–12 | edge cases |
+**Totales:** ~68–88 h · **4–5 sem**
+</reference_output>
+</reference_estimation>
+{% elif output_format == "line_items" %}
+<reference_estimation id="3" project_domain="{{ project_type }}">
+<summary_cliente>Panel CS: salud de cuenta, señales de churn y playbooks.</summary_cliente>
+<reference_output>
+| Tarea | Horas | Coste (EUR) |
+|------|------:|------------|
+| Ingesta producto + CRM | 24 | 1.440 |
+| dbt capa gold health | 18 | 1.080 |
+| API BFF + cache | 14 | 840 |
+| UI React + gráficos | 26 | 1.560 |
+| Alertas y umbrales | 12 | 720 |
+### Totales: 94 h · 5.640 EUR · 4–5 sem
+</reference_output>
+</reference_estimation>
+{% elif output_format == "narrative" %}
+<reference_estimation id="3" project_domain="{{ project_type }}">
+<summary_cliente>Panel CS: salud de cuenta, señales de churn y playbooks.</summary_cliente>
+<reference_output>
+**Alcance:** sin ML predictivo en v1 (solo reglas y pesos configurables). **Esfuerzo:** **~94 h** y **5.640 EUR**.
+</reference_output>
+</reference_estimation>
+{% endif %}
+{% elif detail_level == "detailed" %}
+{% if output_format == "phases_table" %}
+<reference_estimation id="3" project_domain="{{ project_type }}">
+<summary_cliente>Panel CS: salud de cuenta, señales de churn y playbooks.</summary_cliente>
+<reference_output>
+| Fase | Entregable principal | Horas (rango) | Riesgos / notas |
+|------|----------------------|---------------|-----------------|
+| Gobernanza | catálogo métricas + owners | 12–16 | definiciones · **confidence_pct 74** |
+| Datos | SLAs frescura + DQ | 24–32 | huecos CRM · **confidence_pct 60** |
+| Producto | explainability score | 18–24 | confianza CS · **confidence_pct 66** |
+| Seguridad | PII masking | 10–14 | logs · **confidence_pct 81** |
+</reference_output>
+</reference_estimation>
+{% elif output_format == "line_items" %}
+<reference_estimation id="3" project_domain="{{ project_type }}">
+<summary_cliente>Panel CS: salud de cuenta, señales de churn y playbooks.</summary_cliente>
+<reference_output>
+| Tarea | Horas | Coste (EUR) | confidence_pct |
+|------|------:|------------:|---------------:|
+| Contrato semántico métricas | 14 | 840 | 77 |
+| Jobs incremental + DQ | 28 | 1.680 | 58 |
+| Score explicable + UI | 22 | 1.320 | 65 |
+| Masking PII en exports | 12 | 720 | 82 |
+| Runbooks CS + training | 10 | 600 | 78 |
+</reference_output>
+</reference_estimation>
+{% elif output_format == "narrative" %}
+<reference_estimation id="3" project_domain="{{ project_type }}">
+<summary_cliente>Panel CS: salud de cuenta, señales de churn y playbooks.</summary_cliente>
+<reference_output>
+**confidence_pct 58–82:** calidad de CRM y PII gobiernan el rango **88–112 h**.
+**Mitigación:** data quality gates antes de exponer score a CS.
+</reference_output>
+</reference_estimation>
+{% endif %}
+{% endif %}

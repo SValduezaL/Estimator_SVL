@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.schemas.estimation import ESTIMATION_PROMPT_VERSION
+from app.prompts.registry import ESTIMATION_PROMPT_VERSION
 
 TRANSCRIPTION = (
     "We need a small CRM with auth, contacts and roles. MVP six weeks. "
@@ -33,6 +33,8 @@ def test_stream_emits_token_metrics_done(client, litellm_stub_log: list[dict]) -
     assert "stream-chunk" in raw
     assert "event: metrics" in raw
     assert ESTIMATION_PROMPT_VERSION in raw
+    assert "prompt_version_created_at" in raw
+    assert "2026-05-13" in raw
     assert "event: done" in raw
     assert "[DONE]" in raw
     assert sum(1 for c in litellm_stub_log if c.get("source") == "router") == 1

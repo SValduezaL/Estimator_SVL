@@ -6,6 +6,12 @@ import pytest
 from jinja2 import TemplateNotFound, UndefinedError
 
 from app.prompts.loader import build_estimation_jinja_environment, render_estimation_prompt
+from app.prompts.registry import (
+    DEFAULT_ESTIMATION_BUNDLE,
+    ESTIMATION_BUNDLE_V1,
+    ESTIMATION_PROMPT_VERSION,
+    get_estimation_bundle,
+)
 from app.schemas.estimation import DetailLevel, EstimationRequest, OutputFormat, ProjectType
 
 
@@ -97,3 +103,25 @@ def test_strictundefined_errors_on_unknown_variable() -> None:
 def test_unknown_version_raises_template_not_found() -> None:
     with pytest.raises(TemplateNotFound):
         render_estimation_prompt(_make_request(), version="v999_nonexistent")
+
+
+def test_default_bundle_is_estimation_v2() -> None:
+    assert DEFAULT_ESTIMATION_BUNDLE.public_id == "estimation-v2"
+    assert ESTIMATION_PROMPT_VERSION == "estimation-v2"
+
+
+def test_v2_system_includes_quality_and_checklist() -> None:
+    system, _ = render_estimation_prompt(_make_request())
+    assert "<pre_response_checklist>" in system
+    assert "Calibración numérica" in system
+
+
+def test_v1_bundle_skips_v2_only_blocks() -> None:
+    system, _ = render_estimation_prompt(_make_request(), bundle=ESTIMATION_BUNDLE_V1)
+    assert "<pre_response_checklist>" not in system
+    assert "Calibración numérica" not in system
+
+
+def test_get_estimation_bundle_by_public_id() -> None:
+    assert get_estimation_bundle("estimation-v1").template_subdir == "v1"
+    assert get_estimation_bundle("estimation-v2").template_subdir == "v2"

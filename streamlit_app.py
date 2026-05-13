@@ -117,6 +117,7 @@ def _store_metrics_payload(data: dict[str, Any]) -> None:
         "cost_usd": float(data.get("cost_usd", 0.0)),
         "usage_available": data.get("usage_available"),
         "prompt_version": str(data.get("prompt_version", "—")),
+        "prompt_version_created_at": str(data.get("prompt_version_created_at", "—")),
     }
 
 
@@ -218,7 +219,8 @@ with st.sidebar:
         st.markdown(
             """
 **1. Contexto fijo (CAG)**  
-El backend renderiza plantillas Jinja2 versionadas (`app/prompts/estimation/v1/`)
+El backend renderiza plantillas Jinja2 versionadas (`app/prompts/estimation/…`; el bundle activo
+está definido en `app/prompts/registry.py`)
 con rol de estimador, reglas por `detail_level` / `output_format` y few-shot en `examples.j2`.
 
 **2. Formulario estructurado**  
@@ -271,6 +273,9 @@ caché (`cache_hit: true` en `metrics`) sin llamar al LLM.
             st.markdown(f"**Modelo**: {m.get('model', '—')}")
             st.markdown(f"**Proveedor:** {m.get('provider', '—')}")
             st.markdown(f"**Versión de prompt:** {m.get('prompt_version', '—')}")
+            st.markdown(
+                f"**Fecha de referencia del bundle:** {m.get('prompt_version_created_at', '—')}"
+            )
 
             t1, t2, t3 = st.columns(3)
             with t1:

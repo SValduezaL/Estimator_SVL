@@ -1,0 +1,7 @@
+{# Siempre 3 few-shots del mismo project_type; cada escenario elige la variante según detail_level × output_format. #}
+{% set _ex_base = "estimation/" ~ _prompt_bundle_version ~ "/examples/" ~ project_type ~ "/" %}
+<few_shot_selected project_type="{{ project_type }}" detail_level="{{ detail_level }}" output_format="{{ output_format }}">
+{% include _ex_base ~ "scenario_1.j2" %}
+{% include _ex_base ~ "scenario_2.j2" %}
+{% include _ex_base ~ "scenario_3.j2" %}
+</few_shot_selected>

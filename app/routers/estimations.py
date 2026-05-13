@@ -14,8 +14,8 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.config import Settings, get_settings
 from app.dependencies import get_llm_wrapper
-from app.prompts.loader import DEFAULT_ESTIMATION_TEMPLATE_VERSION
-from app.schemas.estimation import ESTIMATION_PROMPT_VERSION, EstimationRequest
+from app.prompts.registry import DEFAULT_ESTIMATION_BUNDLE
+from app.schemas.estimation import EstimationRequest
 from app.services.llm_service import build_estimation_cache_inputs
 from app.services.llm_wrapper import LLMWrapper
 
@@ -34,10 +34,12 @@ async def create_estimation_stream(
 ) -> EventSourceResponse:
     """Streaming SSE: eventos ``token`` (texto), ``metrics`` (JSON) y ``done``."""
     opts = request.to_generation_options()
-    system_prompt, user_message, model_used, max_tokens, thinking_budget = build_estimation_cache_inputs(
-        settings=settings,
-        request=request,
-        template_version=DEFAULT_ESTIMATION_TEMPLATE_VERSION,
+    system_prompt, user_message, model_used, max_tokens, thinking_budget, prompt_bundle = (
+        build_estimation_cache_inputs(
+            settings=settings,
+            request=request,
+            bundle=DEFAULT_ESTIMATION_BUNDLE,
+        )
     )
 
     async def event_generator() -> AsyncIterator[dict]:
@@ -68,7 +70,8 @@ async def create_estimation_stream(
                     if "finish_reason" not in payload:
                         payload["finish_reason"] = "stop"
                     payload["response_seconds"] = time.perf_counter() - start
-                    payload["prompt_version"] = ESTIMATION_PROMPT_VERSION
+                    payload["prompt_version"] = prompt_bundle.public_id
+                    payload["prompt_version_created_at"] = prompt_bundle.created_at.isoformat()
                     yield {"event": "metrics", "data": json.dumps(payload, ensure_ascii=False)}
                     yield {"event": "done", "data": "[DONE]"}
         except Exception as exc:  # pragma: no cover - defensa streaming

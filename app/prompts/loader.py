@@ -1,21 +1,19 @@
 """Carga y renderizado de prompts versionados (Jinja2).
 
-Único punto de contacto entre Python y los artefactos `.j2` bajo `app/prompts/`.
+Único punto de contacto entre Python y los artefactos .j2 bajo ``app/prompts/``.
 """
 
 from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Final
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
+from app.prompts.registry import DEFAULT_ESTIMATION_BUNDLE, PromptBundle
 from app.schemas.estimation import EstimationRequest
 
 _PROMPTS_DIR = Path(__file__).resolve().parent
-
-DEFAULT_ESTIMATION_TEMPLATE_VERSION: Final[str] = "v1"
 
 
 def build_estimation_jinja_environment() -> Environment:
@@ -36,26 +34,48 @@ def _cached_estimation_environment() -> Environment:
 
 def render_estimation_prompt(
     request: EstimationRequest,
-    version: str = "v1",
+    *,
+    bundle: PromptBundle | None = None,
+    version: str | None = None,
 ) -> tuple[str, str]:
     """Renderiza `system.j2` y `user.j2` para el caso de uso *estimation*.
 
     Args:
-        request: Petición validada (enums expuestos como `.value` en el contexto).
-        version: Subcarpeta bajo `estimation/` (p. ej. ``v1`` para rollback / evals).
+        request: Petición validada (enums expuestos como ``.value`` en el contexto).
+        bundle: Bundle registrado (``public_id`` + carpeta). Por defecto
+            ``DEFAULT_ESTIMATION_BUNDLE`` (ver ``app/prompts/registry.py``).
+        version: Solo para tests o migraciones: subcarpeta bajo ``estimation/``
+            (p. ej. ``v1``). Si se informa, tiene prioridad sobre ``bundle``.
 
     Returns:
         Tupla ``(system_prompt, user_prompt)`` lista para el proveedor LLM.
     """
+    if bundle is not None and version is not None:
+        raise ValueError("Indica solo uno de: ``bundle`` o ``version``.")
+
+    if version is not None:
+        b = PromptBundle(
+            use_case="estimation",
+            public_id=f"estimation-{version}",
+            template_subdir=version,
+            created_at=DEFAULT_ESTIMATION_BUNDLE.created_at,
+        )
+    else:
+        b = bundle or DEFAULT_ESTIMATION_BUNDLE
+
+    if b.use_case != "estimation":
+        raise ValueError(f"Solo se soporta use_case='estimation' en el loader actual ({b.use_case!r}).")
+
+    subdir = b.template_subdir
     env = _cached_estimation_environment()
     ctx = {
         "description": request.description,
         "project_type": request.project_type.value,
         "detail_level": request.detail_level.value,
         "output_format": request.output_format.value,
-        "_prompt_bundle_version": version,
-        "_examples_template": f"estimation/{version}/examples.j2",
+        "_prompt_bundle_version": subdir,
+        "_examples_template": f"estimation/{subdir}/examples.j2",
     }
-    system_t = env.get_template(f"estimation/{version}/system.j2")
-    user_t = env.get_template(f"estimation/{version}/user.j2")
+    system_t = env.get_template(f"estimation/{subdir}/system.j2")
+    user_t = env.get_template(f"estimation/{subdir}/user.j2")
     return system_t.render(**ctx).strip(), user_t.render(**ctx).strip()

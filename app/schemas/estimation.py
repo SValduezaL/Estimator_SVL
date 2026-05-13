@@ -4,11 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Final
 
 from pydantic import BaseModel, Field
-
-ESTIMATION_PROMPT_VERSION: Final[str] = "estimation-v1"
 
 
 class ProjectType(str, Enum):
