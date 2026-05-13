@@ -7,7 +7,6 @@ Este módulo centraliza:
 - Normalización de respuesta y uso de tokens en un formato uniforme.
 """
 
-import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Iterator, Literal
@@ -24,10 +23,6 @@ from app.context.examples import (
 )
 
 
-class LLMServiceError(Exception):
-    """Error de negocio al generar una estimación (p. ej. proveedor o validación)."""
-
-
 @dataclass
 class GenerationOptions:
     """Opciones por solicitud para construir el prompt y la llamada al LLM."""
@@ -40,6 +35,9 @@ class GenerationOptions:
     max_tokens: int | None = None
     thinking_budget: int | None = None
     skip_cache: bool = False
+    project_type: str | None = None
+    detail_level: str | None = None
+    output_format: str | None = None
 
 
 @dataclass
@@ -325,6 +323,45 @@ def get_provider_client(settings: Settings) -> BaseProviderClient:
     return provider_cls(settings)
 
 
+def _structured_shape_instructions(opts: GenerationOptions) -> str:
+    """Instrucciones de forma y extensión según enums de la petición."""
+    pt = opts.project_type or "web_saas"
+    dl = opts.detail_level or "medium"
+    of = opts.output_format or "line_items"
+
+    type_hints = {
+        "mobile_app": "Prioriza cliente móvil, stores, offline/sync si aplica, y UX táctil.",
+        "web_saas": "Prioriza multi-tenant, auth, roles, API y despliegue web.",
+        "internal_tool": "Prioriza integración con sistemas existentes, permisos internos y mantenibilidad.",
+        "data_pipeline": "Prioriza fuentes de datos, calidad, orquestación, observabilidad y coste de cómputo.",
+    }
+    detail_hints = {
+        "summary": "Extensión breve: hasta ~30 líneas; bullets compactos; pocos supuestos.",
+        "medium": "Extensión media: secciones claras con desglose útil y supuestos explícitos.",
+        "detailed": "Extensión alta: desglose fino, riesgos, supuestos, dependencias y alternativas.",
+    }
+    format_hints = {
+        "phases_table": (
+            "Formato de salida: usa una tabla Markdown por **fases** con columnas "
+            "tipo `Fase | Entregable principal | Horas (rango) | Riesgos / notas`."
+        ),
+        "line_items": (
+            "Formato de salida: tabla Markdown `| Tarea | Horas | Coste (EUR) |` "
+            "como en los ejemplos, más secciones **Totales**, **Equipo recomendado** y **Duración estimada**."
+        ),
+        "narrative": (
+            "Formato de salida: narrativa en párrafos y listas; puedes omitir tabla si no aporta, "
+            "pero mantén cifras de esfuerzo, coste y plazo comprensibles."
+        ),
+    }
+
+    return (
+        f"Contexto de tipo de proyecto (`{pt}`): {type_hints.get(pt, '')}\n"
+        f"Nivel de detalle (`{dl}`): {detail_hints.get(dl, '')}\n"
+        f"{format_hints.get(of, format_hints['line_items'])}\n"
+    )
+
+
 def build_system_prompt(opts: GenerationOptions | None = None) -> str:
     """Construye el mensaje `system` con instrucciones y ejemplos CAG."""
     opts = opts or GenerationOptions()
@@ -339,176 +376,57 @@ def build_system_prompt(opts: GenerationOptions | None = None) -> str:
         if examples_block
         else ""
     )
+    shape = _structured_shape_instructions(opts) if opts.project_type else ""
     return (
         "Eres un estimador senior de software especializado en discovery técnico, "
         "estimación por tareas y análisis de riesgos.\n\n"
         "Tu objetivo es generar estimaciones accionables y realistas basadas en "
-        "ejemplos históricos y en la transcripción de una nueva reunion.\n\n"
+        "ejemplos históricos y en la descripción estructurada del proyecto.\n\n"
+        f"{shape}"
         f"{examples_section}"
-        "Responde en español y con este formato exacto:\n"
-        "1) Resumen del requerimiento (max 5 lineas)\n"
-        "2) Alcance funcional\n"
-        "3) Supuestos\n"
-        "4) Riesgos\n"
-        "5) Estimación de esfuerzo en horas (rango)\n"
-        "6) Coste estimado (EUR)\n"
-        "7) Timeline sugerido (semanas)\n"
-        "8) Equipo recomendado\n\n"
-        "No inventes integraciones no mencionadas. Si hay ambigüedad, "
-        "declara supuestos explícitamente."
+        "Responde en español. Incluye siempre, de forma coherente con el nivel de detalle pedido:\n"
+        "- Resumen del requerimiento\n"
+        "- Alcance funcional y exclusiones\n"
+        "- Supuestos y riesgos\n"
+        "- Estimación de esfuerzo (horas o rango)\n"
+        "- Coste orientativo (EUR) y tarifa de referencia si aplica\n"
+        "- Duración sugerida y equipo recomendado\n\n"
+        "No inventes integraciones no mencionadas. Si hay ambigüedad, declara supuestos explícitamente."
     )
 
 
-def build_estimation_user_message(transcription: str) -> str:
-    """Mensaje de usuario estándar para estimación (alineado con `LLMService.build_user_message`)."""
+def build_structured_user_message(
+    description: str,
+    *,
+    project_type: str,
+    detail_level: str,
+    output_format: str,
+) -> str:
+    """Mensaje de usuario con la descripción y metadatos de la petición."""
     return (
-        "Genera una estimación para la siguiente transcripción de reunión:\n\n"
-        f"{transcription}"
+        "Genera una estimación de esfuerzo de desarrollo de software con estos parámetros:\n\n"
+        f"- Tipo de proyecto: {project_type}\n"
+        f"- Nivel de detalle: {detail_level}\n"
+        f"- Formato de salida: {output_format}\n\n"
+        "Descripción del proyecto:\n"
+        f"{description}\n"
     )
 
 
 def build_estimation_cache_inputs(
     *,
     settings: Settings,
-    transcription: str,
+    description: str,
     opts: GenerationOptions,
 ) -> tuple[str, str, str, int, int | None]:
     """Textos y parámetros que entran en la clave de caché y en la llamada al modelo."""
     system_prompt = build_system_prompt(opts)
-    user_message = build_estimation_user_message(transcription)
+    user_message = build_structured_user_message(
+        description,
+        project_type=opts.project_type or "web_saas",
+        detail_level=opts.detail_level or "medium",
+        output_format=opts.output_format or "line_items",
+    )
     model = opts.model if opts.model is not None else settings.llm_model
     max_tokens = opts.max_tokens if opts.max_tokens is not None else settings.max_tokens
     return system_prompt, user_message, model, max_tokens, opts.thinking_budget
-
-
-class LLMService:
-    """Encapsula la generación de estimaciones via LLM usando patron CAG.
-    Esta clase orquesta:
-    1) Seleccion de proveedor.
-    2) Construcción del system prompt con contexto estático.
-    3) Construcción del user message con la transcripción.
-    4) Ejecución y retorno de un resultado uniforme.
-    """
-
-    def __init__(self, *, settings: Settings | None = None) -> None:
-        """Inicializa el servicio resolviendo el proveedor configurado.
-        Args:
-            settings: Configuración explícita (tests o overrides). Si es None,
-                se usa `get_settings()` (cacheado a nivel de proceso).
-        Raises:
-            ValueError: Si el proveedor no esta registrado en `PROVIDER_CLIENTS`.
-        """
-        self._settings = settings if settings is not None else get_settings()
-        self.client = get_provider_client(self._settings)
-
-    @staticmethod
-    def build_system_prompt(opts: GenerationOptions | None = None) -> str:
-        """Delega en `build_system_prompt` de módulo (compatibilidad)."""
-        return build_system_prompt(opts)
-
-    def build_user_message(self, transcription: str) -> str:
-        """Construye el mensaje `user` con la transcripción a estimar.
-        Args:
-            transcription: Texto bruto de la reunion con el cliente.
-        Returns:
-            Mensaje final de usuario para enviar al LLM.
-        """
-        return build_estimation_user_message(transcription)
-
-    def estimate(self, transcription: str, *, opts: GenerationOptions | None = None) -> GenerationResult:
-        """Ejecuta el flujo CAG completo y devuelve resultado normalizado.
-        Args:
-            transcription: Texto de transcripción usado como input de negocio.
-            opts: Opciones de generación; por defecto todas las predeterminadas.
-        Returns:
-            `GenerationResult` con estimación y consumo de tokens.
-        """
-        opts = opts or GenerationOptions()
-        system_prompt = build_system_prompt(opts)
-        user_message = self.build_user_message(transcription=transcription)
-        model = opts.model if opts.model is not None else self._settings.llm_model
-        max_tokens = opts.max_tokens if opts.max_tokens is not None else self._settings.max_tokens
-        return self.client.generate(
-            model=model,
-            system_prompt=system_prompt,
-            user_message=user_message,
-            temperature=self._settings.temperature,
-            max_tokens=max_tokens,
-        )
-
-    def stream_estimate(
-        self,
-        transcription: str,
-        *,
-        opts: GenerationOptions | None = None,
-    ) -> Iterator[StreamEvent]:
-        """Ejecuta flujo CAG completo en modo streaming incremental."""
-        opts = opts or GenerationOptions()
-        system_prompt = build_system_prompt(opts)
-        user_message = self.build_user_message(transcription=transcription)
-        model = opts.model if opts.model is not None else self._settings.llm_model
-        max_tokens = opts.max_tokens if opts.max_tokens is not None else self._settings.max_tokens
-        start_time = time.perf_counter()
-        done_sent = False
-        for event in self.client.stream_generate(
-            model=model,
-            system_prompt=system_prompt,
-            user_message=user_message,
-            temperature=self._settings.temperature,
-            max_tokens=max_tokens,
-        ):
-            if event.type == "done":
-                done_sent = True
-                merged_data = dict(event.data)
-                merged_data["model"] = model
-                merged_data["response_seconds"] = time.perf_counter() - start_time
-                yield StreamEvent(type="done", data=merged_data)
-                continue
-            yield event
-
-        if not done_sent:
-            yield StreamEvent(
-                type="done",
-                data={
-                    "model": model,
-                    "response_seconds": time.perf_counter() - start_time,
-                    "usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
-                    "usage_available": False,
-                },
-            )
-
-
-def generate_estimation(
-    transcription: str,
-    opts: GenerationOptions,
-    *,
-    settings: Settings | None = None,
-    llm_wrapper: Any,
-) -> dict[str, Any]:
-    """Ejecuta estimación síncrona vía LiteLLM (wrapper); elevando `LLMServiceError` ante errores."""
-    if opts.preprocessing != "none":
-        raise LLMServiceError(
-            f"Solo se admite preprocessing='none'; recibido: {opts.preprocessing!r}."
-        )
-    settings = settings if settings is not None else get_settings()
-    system_prompt, user_message, _model, max_tokens, thinking_budget = build_estimation_cache_inputs(
-        settings=settings,
-        transcription=transcription,
-        opts=opts,
-    )
-
-    try:
-        raw = llm_wrapper.complete(
-            system_prompt=system_prompt,
-            user_message=user_message,
-            model_override=opts.model,
-            max_tokens=max_tokens,
-            thinking_budget=thinking_budget,
-            skip_cache=opts.skip_cache,
-        )
-    except ValueError as exc:
-        raise LLMServiceError(str(exc)) from exc
-    except Exception as exc:  # pragma: no cover - APIs externas
-        raise LLMServiceError(f"Fallo al llamar al proveedor LLM: {exc}") from exc
-
-    return raw

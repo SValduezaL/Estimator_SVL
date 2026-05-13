@@ -45,29 +45,6 @@ def _usage_tokens(usage: Any) -> tuple[int, int, int]:
     return inp, out, tot
 
 
-def _normalise_blocking_response(response: Any, *, latency_ms: int) -> dict[str, Any]:
-    choice = response.choices[0]
-    finish_reason = str((getattr(choice, "finish_reason", None) or "stop")).lower()
-    usage = getattr(response, "usage", None)
-    input_tokens, output_tokens, total_tokens = _usage_tokens(usage)
-    model = normalise_model_name(str(getattr(response, "model", "") or ""))
-    if not model:
-        model = "unknown"
-    return {
-        "estimation": (getattr(choice.message, "content", None) or "").strip(),
-        "model": model,
-        "provider": provider_from_model(model),
-        "finish_reason": finish_reason,
-        "usage": {
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
-            "total_tokens": total_tokens,
-        },
-        "latency_ms": latency_ms,
-        "cost_usd": estimate_cost_usd(model, input_tokens, output_tokens),
-    }
-
-
 class LLMWrapper:
     """LiteLLM + Router (fallback opcional), caché exacta y tracking de coste."""
 
@@ -183,85 +160,6 @@ class LLMWrapper:
             )
         return self.router.completion(model="estimator", **kwargs)
 
-    def complete(
-        self,
-        *,
-        system_prompt: str,
-        user_message: str,
-        model_override: str | None = None,
-        max_tokens: int,
-        thinking_budget: int | None = None,
-        skip_cache: bool = False,
-    ) -> dict[str, Any]:
-        """Una completación con caché exacta opcional. Devuelve dict + ``cache_hit``."""
-        cache_key_model = model_override or self._primary_model
-        cache_key: str | None = None
-        if self._cache is not None and not skip_cache:
-            cache_key = EstimationCache.make_key(
-                system_prompt=system_prompt,
-                user_message=user_message,
-                model=cache_key_model,
-                max_tokens=max_tokens,
-                thinking_budget=thinking_budget,
-            )
-            cached = self._cache.get(cache_key)
-            if cached:
-                if "provider" not in cached:
-                    cached = {
-                        **cached,
-                        "provider": provider_from_model(str(cached.get("model", cache_key_model))),
-                    }
-                return {
-                    **cached,
-                    "cache_hit": True,
-                    "cost_usd": float(cached.get("cost_usd", 0.0)),
-                }
-
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message},
-        ]
-        kwargs = self._build_call_kwargs(
-            messages=messages,
-            max_tokens=max_tokens,
-            thinking_budget=thinking_budget,
-            model_override=model_override,
-            stream=False,
-        )
-        log.info(
-            "llm_call_started mode=blocking model=%s has_thinking=%s",
-            cache_key_model,
-            thinking_budget is not None,
-        )
-        t0 = time.perf_counter()
-        try:
-            response = self._dispatch(model_override=model_override, **kwargs)
-        except Exception as exc:
-            latency_ms = int((time.perf_counter() - t0) * 1000)
-            log.error(
-                "llm_call_failed error_type=%s error=%s latency_ms=%s",
-                type(exc).__name__,
-                exc,
-                latency_ms,
-            )
-            raise
-
-        latency_ms = int((time.perf_counter() - t0) * 1000)
-        result = _normalise_blocking_response(response, latency_ms=latency_ms)
-        log.info(
-            "llm_call_completed model=%s provider=%s in=%s out=%s cost_usd=%s latency_ms=%s finish=%s",
-            result["model"],
-            result["provider"],
-            result["usage"]["input_tokens"],
-            result["usage"]["output_tokens"],
-            result["cost_usd"],
-            latency_ms,
-            result["finish_reason"],
-        )
-        if self._cache is not None and cache_key is not None and not skip_cache:
-            self._cache.set(cache_key, result)
-        return {**result, "cache_hit": False}
-
     def stream_events(
         self,
         *,
@@ -272,7 +170,7 @@ class LLMWrapper:
         thinking_budget: int | None = None,
         skip_cache: bool = False,
     ) -> Iterator[StreamEvent]:
-        """Eventos chunk + done (métricas) con LiteLLM streaming y caché alineada a ``complete``."""
+        """Eventos chunk + done (métricas) con LiteLLM streaming y caché exacta."""
         max_t = max_tokens if max_tokens is not None else self._settings.max_tokens
         cache_key_model = model_override or self._primary_model
         cache_key: str | None = None

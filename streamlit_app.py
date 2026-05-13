@@ -1,12 +1,4 @@
-"""Interfaz Streamlit tipo chat para el estimador CAG.
-
-Streamlit actúa como cliente HTTP de FastAPI: hace POST a
-``/api/v1/estimate/stream`` y pinta los fragmentos SSE con
-``st.write_stream`` (generador que solo hace ``yield`` de texto). Las
-métricas del evento ``metrics`` se guardan en ``st.session_state`` en el mismo
-recorrido. La URL base se lee de ``ESTIMATOR_API_BASE_URL`` o ``API_BASE_URL``
-(mismo ``.env`` que la API vía ``load_dotenv``).
-"""
+"""Interfaz Streamlit: formulario estructurado y streaming SSE hacia la API."""
 
 from __future__ import annotations
 
@@ -20,16 +12,25 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from app.context.examples import CANONICAL_EXAMPLES, format_examples_for_prompt, select_examples
+from app.schemas.estimation import (
+    DETAIL_LEVEL_LABELS,
+    OUTPUT_FORMAT_LABELS,
+    PROJECT_TYPE_LABELS,
+    DetailLevel,
+    EstimationRequest,
+    OutputFormat,
+    ProjectType,
+)
 from app.services.llm_service import GenerationOptions, build_system_prompt
 
 load_dotenv()
 
-MIN_TRANSCRIPTION_LEN = 50
+MIN_DESCRIPTION_LEN = 20
 
 _api_base = (
     (os.getenv("ESTIMATOR_API_BASE_URL") or os.getenv("API_BASE_URL") or "http://localhost:8000").rstrip("/")
 )
-STREAM_ENDPOINT = f"{_api_base}/api/v1/estimate/stream"
+STREAM_ENDPOINT = f"{_api_base}/api/v1/estimate"
 
 st.set_page_config(
     page_title="Estimador CAG",
@@ -38,13 +39,16 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-_default_opts = GenerationOptions()
+_default_opts = GenerationOptions(
+    project_type=ProjectType.WEB_SAAS.value,
+    detail_level=DetailLevel.MEDIUM.value,
+    output_format=OutputFormat.LINE_ITEMS.value,
+)
 _system_prompt = build_system_prompt(_default_opts)
 _examples_json = format_examples_for_prompt(select_examples(len(CANONICAL_EXAMPLES)), fmt="json")
 
 
 def _sse_data_payload(line: str) -> str:
-    """Extrae el cuerpo tras ``data:`` respetando el espacio opcional del framing SSE."""
     if line.startswith("data: "):
         return line[6:]
     if line.startswith("data:"):
@@ -52,28 +56,8 @@ def _sse_data_payload(line: str) -> str:
     return line
 
 
-def stream_estimation_events(
-    transcription: str,
-    *,
-    skip_cache: bool = False,
-    model: str | None = None,
-    max_tokens: int | None = None,
-    example_format: str = "markdown",
-    use_examples: bool = True,
-) -> Iterator[dict[str, Any]]:
-    """POST al endpoint SSE y emite eventos tipados (token, metrics, done, error)."""
-    payload: dict[str, Any] = {
-        "transcription": transcription,
-        "preprocessing": "none",
-        "skip_cache": skip_cache,
-        "use_examples": use_examples,
-        "example_format": example_format,
-    }
-    if model:
-        payload["model"] = model
-    if max_tokens is not None:
-        payload["max_tokens"] = max_tokens
-
+def stream_estimation_events(payload: dict[str, Any]) -> Iterator[dict[str, Any]]:
+    """POST al endpoint SSE y emite eventos (token, metrics, done, error)."""
     timeout = httpx.Timeout(300.0, connect=15.0)
     with httpx.stream(
         "POST",
@@ -118,7 +102,6 @@ def stream_estimation_events(
 
 
 def _store_metrics_payload(data: dict[str, Any]) -> None:
-    """Persiste el JSON del evento SSE ``metrics`` para el panel lateral."""
     st.session_state.last_metrics_raw = dict(data)
     usage = data.get("usage") or {}
     if not isinstance(usage, dict):
@@ -134,9 +117,10 @@ def _store_metrics_payload(data: dict[str, Any]) -> None:
         "finish_reason": str(data.get("finish_reason", "—")),
         "cost_usd": float(data.get("cost_usd", 0.0)),
         "usage_available": data.get("usage_available"),
+        "prompt_version": str(data.get("prompt_version", "—")),
     }
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+
+
 if "last_metrics" not in st.session_state:
     st.session_state.last_metrics = None
 if "last_metrics_raw" not in st.session_state:
@@ -153,12 +137,11 @@ with st.sidebar:
             """
 **1. Contexto fijo (CAG)**  
 El backend construye un *system prompt* con tu rol de estimador y ejemplos
-históricos (few-shot). Eso estabiliza formato y criterios antes de leer la
-transcripción.
+históricos (few-shot), alineados al tipo de proyecto y formato de salida elegidos.
 
-**2. Tu mensaje**  
-La transcripción va en el mensaje de *usuario*. El modelo genera la
-estimación en **Markdown** (tablas, secciones) para esa reunión.
+**2. Formulario estructurado**  
+La descripción del proyecto y los selectores se serializan como `EstimationRequest`
+(JSON) hacia `POST /api/v1/estimate`.
 
 **3. Streaming (SSE)**  
 La API emite `token` (texto), `metrics` (JSON) y `done`. Esta interfaz usa
@@ -172,46 +155,21 @@ caché (`cache_hit: true` en `metrics`) sin llamar al LLM.
         )
         st.divider()
         st.markdown(
-            f"**Validación:** la transcripción debe tener al menos **{MIN_TRANSCRIPTION_LEN}** caracteres."
+            f"**Validación:** la descripción debe tener al menos **{MIN_DESCRIPTION_LEN}** caracteres."
         )
         st.link_button("Abrir documentación OpenAPI", f"{_api_base}/docs")
 
     with tab_cag:
         st.markdown(
-            "Vista previa de lo que usa el backend (`build_system_prompt` + ejemplos canónicos). "
-            "El formato de ejemplos de la petición se elige en la pestaña **Servidor**."
+            "Vista previa de lo que usa el backend (`build_system_prompt` con opciones por defecto "
+            "web SaaS / detalle medio / partidas en tabla)."
         )
         st.text_area("System prompt (solo lectura)", value=_system_prompt, height=200, disabled=True)
         st.text_area("Ejemplos (JSON, solo lectura)", value=_examples_json, height=220, disabled=True)
 
     with tab_srv:
-        st.subheader("Conexión y payload")
+        st.subheader("Conexión")
         st.code(STREAM_ENDPOINT, language="text")
-        st.checkbox(
-            "Forzar `skip_cache` (no leer ni escribir Redis en esta petición)",
-            value=False,
-            key="srv_skip_cache",
-        )
-        st.text_input(
-            "Override de modelo (opcional)",
-            placeholder="Vacío = modelo del servidor (.env)",
-            key="srv_model",
-        )
-        st.number_input(
-            "max_tokens (0 = omitir; usa el default del servidor)",
-            min_value=0,
-            max_value=16000,
-            value=0,
-            key="srv_max_tokens",
-        )
-        st.selectbox(
-            "Formato de ejemplos CAG en el prompt",
-            options=["markdown", "json", "narrative"],
-            index=0,
-            key="srv_example_format",
-        )
-        st.checkbox("Incluir bloque de ejemplos (`use_examples`)", value=True, key="srv_use_examples")
-
         st.divider()
         st.subheader("Entorno local (solo lectura)")
         redis_hint = "sí" if (os.getenv("REDIS_URL") or "").strip() else "no"
@@ -222,11 +180,6 @@ caché (`cache_hit: true` en `metrics`) sin llamar al LLM.
             f"| `REDIS_URL` | *{redis_hint}* |\n"
             f"| `CACHE_TTL_SECONDS` | `{os.getenv('CACHE_TTL_SECONDS', '86400')}` |\n"
         )
-        if st.button("Borrar historial del chat", type="secondary"):
-            st.session_state.messages = []
-            st.session_state.last_metrics = None
-            st.session_state.last_metrics_raw = None
-            st.rerun()
 
     with tab_metrics:
         st.subheader("Última respuesta del servidor")
@@ -235,6 +188,7 @@ caché (`cache_hit: true` en `metrics`) sin llamar al LLM.
 
             st.markdown(f"**Modelo**: {m.get('model', '—')}")
             st.markdown(f"**Proveedor:** {m.get('provider', '—')}")
+            st.markdown(f"**Versión de prompt:** {m.get('prompt_version', '—')}")
 
             t1, t2, t3 = st.columns(3)
             with t1:
@@ -276,80 +230,84 @@ caché (`cache_hit: true` en `metrics`) sin llamar al LLM.
                 with st.expander("JSON completo del evento `metrics`"):
                     st.json(st.session_state.last_metrics_raw)
         else:
-            st.info("Aún no hay métricas en esta sesión. Envía una transcripción válida.")
+            st.info("Aún no hay métricas en esta sesión. Envía el formulario principal.")
 
 st.title("Estimador de software (CAG)")
-st.caption(
-    "Pega una transcripción de reunión; la estimación llega en texto/Markdown "
-    "en streaming con ``st.write_stream``."
-)
+st.caption("Formulario estructurado; la estimación llega en streaming con `st.write_stream`.")
 
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+with st.form("estimation_form"):
+    description = st.text_area(
+        "Descripción del proyecto",
+        height=180,
+        placeholder="Describe alcance, integraciones conocidas, plazos y restricciones (mín. 20 caracteres).",
+    )
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        project_type = st.selectbox(
+            "Tipo de proyecto",
+            options=list(ProjectType),
+            format_func=lambda p: PROJECT_TYPE_LABELS[p],
+        )
+    with c2:
+        detail_level = st.selectbox(
+            "Nivel de detalle",
+            options=list(DetailLevel),
+            format_func=lambda d: DETAIL_LEVEL_LABELS[d],
+        )
+    with c3:
+        output_format = st.selectbox(
+            "Formato de salida",
+            options=list(OutputFormat),
+            format_func=lambda o: OUTPUT_FORMAT_LABELS[o],
+        )
+    submitted = st.form_submit_button("Generar estimación")
 
-prompt = st.chat_input("Transcripción de la reunión (mín. 50 caracteres)...")
-
-if prompt:
-    if len(prompt) < MIN_TRANSCRIPTION_LEN:
+if submitted:
+    desc = (description or "").strip()
+    if len(desc) < MIN_DESCRIPTION_LEN:
         st.error(
-            f"La transcripción tiene {len(prompt)} caracteres; la API exige al menos {MIN_TRANSCRIPTION_LEN}."
+            f"La descripción tiene {len(desc)} caracteres; la API exige al menos {MIN_DESCRIPTION_LEN}."
         )
     else:
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+        try:
+            req = EstimationRequest(
+                description=desc,
+                project_type=project_type,
+                detail_level=detail_level,
+                output_format=output_format,
+            )
+        except Exception as exc:
+            st.error(f"Datos no válidos: {exc}")
+        else:
+            payload = req.model_dump(mode="json")
+            sse_errors: list[str] = []
 
-        skip_cache = bool(st.session_state.get("srv_skip_cache", False))
-        model_raw = (st.session_state.get("srv_model") or "").strip()
-        model_override = model_raw or None
-        max_tok = int(st.session_state.get("srv_max_tokens") or 0)
-        max_tokens_payload = None if max_tok == 0 else max_tok
-        example_fmt = str(st.session_state.get("srv_example_format") or "markdown")
-        use_examples = bool(st.session_state.get("srv_use_examples", True))
+            def estimation_token_stream() -> Iterator[str]:
+                for event in stream_estimation_events(payload):
+                    et = str(event.get("event", ""))
+                    data = event.get("data")
+                    if et == "token" and isinstance(data, str) and data:
+                        yield data
+                    elif et == "metrics" and isinstance(data, dict):
+                        _store_metrics_payload(data)
+                    elif et == "error":
+                        msg = data if isinstance(data, str) else str(data)
+                        sse_errors.append(msg or "Error SSE")
+                        return
+                    elif et == "done":
+                        pass
 
-        assistant_reply = ""
-        sse_errors: list[str] = []
-
-        def estimation_token_stream() -> Iterator[str]:
-            """Solo emite texto para ``write_stream``; métricas van a session_state."""
-            for event in stream_estimation_events(
-                prompt,
-                skip_cache=skip_cache,
-                model=model_override,
-                max_tokens=max_tokens_payload,
-                example_format=example_fmt,
-                use_examples=use_examples,
-            ):
-                et = str(event.get("event", ""))
-                data = event.get("data")
-                if et == "token" and isinstance(data, str) and data:
-                    yield data
-                elif et == "metrics" and isinstance(data, dict):
-                    _store_metrics_payload(data)
-                elif et == "error":
-                    msg = data if isinstance(data, str) else str(data)
-                    sse_errors.append(msg or "Error SSE")
-                    return
-                elif et == "done":
-                    pass
-
-        with st.chat_message("assistant"):
             try:
-                assistant_reply = st.write_stream(estimation_token_stream()) or ""
+                st.subheader("Resultado")
+                st.write_stream(estimation_token_stream())
                 if sse_errors:
                     st.error(sse_errors[0])
             except httpx.HTTPError as exc:
-                assistant_reply = (
-                    f"No se pudo conectar con la API en `{STREAM_ENDPOINT}`.\n\n"
-                    f"Detalle: `{exc}`"
+                st.error(
+                    f"No se pudo conectar con la API en `{STREAM_ENDPOINT}`.\n\nDetalle: `{exc}`"
                 )
-                st.error(assistant_reply)
             except Exception as exc:  # pragma: no cover
-                assistant_reply = (
+                st.warning(
                     "Error al generar la estimación. Revisa claves LLM y logs del servidor.\n\n"
                     f"Detalle: `{exc}`"
                 )
-                st.warning(assistant_reply)
-
-        st.session_state.messages.append({"role": "assistant", "content": assistant_reply})

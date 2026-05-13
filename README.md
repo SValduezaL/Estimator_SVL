@@ -1,29 +1,29 @@
 # Estimador CAG
 
-FastAPI + Streamlit para estimar esfuerzo de desarrollo a partir de transcripciones de reuniones. El backend inyecta contexto estático (ejemplos históricos) en cada prompt al LLM (patrón CAG), con streaming SSE, caché Redis opcional y estimación de coste por tokens.
+FastAPI + Streamlit para estimar esfuerzo de desarrollo a partir de una **descripción estructurada del proyecto** (tipo, nivel de detalle y formato de salida). El backend inyecta contexto estático (ejemplos históricos) en cada prompt al LLM (patrón CAG), responde **solo en streaming SSE**, con caché Redis opcional y estimación de coste por tokens.
 
 ## Arquitectura
 
 ```
 app/
-├── routers/        # Endpoints HTTP (POST /estimate, POST /estimate/stream)
-├── services/       # Lógica de negocio: llm_service, llm_wrapper, llm_cache, llm_pricing, evaluation
+├── routers/        # POST /api/v1/estimate (solo streaming SSE)
+├── services/       # llm_service, llm_wrapper, llm_cache, llm_pricing, evaluation
 ├── context/        # Ejemplos canónicos few-shot (CANONICAL_EXAMPLES) y formateadores
-├── schemas/        # Modelos Pydantic de entrada/salida
-├── fixtures/       # Transcripciones de prueba (short / long)
+├── schemas/        # EstimationRequest / enums (app/schemas/estimation.py)
+├── fixtures/       # Datos de prueba (p. ej. transcripciones largas)
 └── config.py       # Configuración vía Pydantic BaseSettings + .env
-streamlit_app.py    # Interfaz de chat con streaming SSE
+streamlit_app.py    # Formulario + cliente HTTP con streaming SSE
 ```
 
 Módulos clave en `app/services/`:
 
 | Módulo | Responsabilidad |
 |---|---|
-| `llm_service.py` | Construcción de prompt CAG y llamada al proveedor |
+| `llm_service.py` | Construcción de prompt CAG (system + user estructurado) |
 | `llm_wrapper.py` | Wrapper LiteLLM con streaming, caché y retry |
 | `llm_cache.py` | Caché Redis (`EstimationCache`) y chunking SSE |
 | `llm_pricing.py` | Tabla de costes por modelo y estimación `cost_usd` |
-| `evaluation.py` | Validación heurística de la estructura Markdown devuelta |
+| `evaluation.py` | Validación heurística de Markdown (uso interno / tests) |
 
 ## Requisitos
 
@@ -31,7 +31,7 @@ Módulos clave en `app/services/`:
 - `uv` instalado
 - API key de OpenAI o Anthropic
 
-## Instalacion
+## Instalación
 
 Solo dependencias de runtime (API):
 
@@ -83,36 +83,49 @@ Notas:
 
 ## Tests (local)
 
-Los tests se ejecutan en tu maquina con el entorno de desarrollo; **`docker-compose-dev.yml` solo levanta la API** (no instala ni lanza `pytest` en contenedor).
+Los tests se ejecutan en tu máquina con el entorno de desarrollo; **`docker-compose-dev.yml` solo levanta la API** (no instala ni lanza `pytest` en contenedor).
 
 ```bash
 uv sync --dev
 pytest
 ```
 
-Algunos tests importan `app.main` y disparan la validacion de `Settings`: necesitas un `.env` coherente (por ejemplo `OPENAI_API_KEY` si `LLM_PROVIDER=openai`). Los tests del endpoint suelen simular la llamada al proveedor con `monkeypatch`.
+Algunos tests importan `app.main` y disparan la validación de `Settings`: necesitas un `.env` coherente (por ejemplo `OPENAI_API_KEY` si `LLM_PROVIDER=openai`). Los tests del endpoint suelen simular la llamada al proveedor con `monkeypatch`.
 
 ## Servicio LLM (CAG)
 
 El servicio en `app/services/llm_service.py` usa el patrón de mensajes:
 
-- `system`: rol del modelo + instrucciones + ejemplos históricos (`CANONICAL_EXAMPLES`, serializable en `markdown`, `json` o `narrative`).
-- `user`: transcripción de la reunión a estimar.
-- `assistant`: estimación generada por el modelo.
+- `system`: rol del modelo, instrucciones por tipo/detalle/formato de salida y ejemplos históricos (`CANONICAL_EXAMPLES`; el formato few-shot se deriva del `output_format` de la petición).
+- `user`: descripción del proyecto y metadatos (`project_type`, `detail_level`, `output_format`).
+- `assistant`: estimación generada por el modelo (en el cliente se reconstruye a partir de los eventos `token`).
 
 La selección de proveedor se hace con `LLM_PROVIDER` y el modelo con `LLM_MODEL`.
 
+### Contrato de entrada (`EstimationRequest`)
+
+Definido en `app/schemas/estimation.py` (Pydantic v2):
+
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `description` | `str` | 20–2000 caracteres |
+| `project_type` | enum | `mobile_app`, `web_saas`, `internal_tool`, `data_pipeline` |
+| `detail_level` | enum | `summary`, `medium`, `detailed` |
+| `output_format` | enum | `phases_table`, `line_items`, `narrative` |
+
+El modelo lógico de salida documentado es `EstimationResponse` (`text`, `prompt_version`); la respuesta HTTP real es **streaming** (ver abajo). El evento SSE `metrics` incluye `prompt_version` junto con uso, coste y caché.
+
 ### Caché Redis
 
-Si `REDIS_URL` está configurado, las peticiones idénticas (mismo prompt + modelo + parámetros) se sirven desde Redis sin llamar al LLM. El evento SSE `metrics` incluye `cache_hit: true/false` y el campo `cost_usd` con el coste estimado en dólares. Los precios por modelo se centralizan en `app/services/llm_pricing.py`.
+Si `REDIS_URL` está configurado, las peticiones idénticas (mismo system + user + modelo + `max_tokens` + `thinking_budget`) se sirven desde Redis sin llamar al LLM. El evento SSE `metrics` incluye `cache_hit: true/false` y `cost_usd`. Los precios por modelo están en `app/services/llm_pricing.py`.
 
 ### Interfaz Streamlit
 
-`streamlit_app.py` actúa como cliente HTTP de la API. Conecta al endpoint `/api/v1/estimate/stream` y presenta:
+`streamlit_app.py` actúa como cliente HTTP de la API. Envía `POST /api/v1/estimate` con el cuerpo JSON de `EstimationRequest` y **Accept: text/event-stream**:
 
+- Formulario (`st.form`) con descripción y selectores alineados a los enums del backend.
 - Texto de la estimación en streaming con `st.write_stream`.
-- Panel lateral con 4 pestañas: **Cómo funciona**, **Prompt CAG**, **Servidor** y **Métricas**.
-- La pestaña **Métricas** muestra tokens (entrada/salida/total), tiempo de respuesta, hit/miss de caché, `usage_available`, coste estimado y el JSON completo del evento `metrics`.
+- Panel lateral: **Cómo funciona**, **Prompt CAG**, **Servidor**, **Métricas** (tokens, tiempo, caché, `prompt_version`, coste y JSON de `metrics`).
 
 Para soportar nuevos LLM en el futuro:
 
@@ -127,7 +140,7 @@ Para soportar nuevos LLM en el futuro:
 uv run python -m uvicorn app.main:app --reload
 ```
 
-## Ejecutar interfaz Streamlit (chat)
+## Ejecutar interfaz Streamlit
 
 Requiere que la API esté corriendo (en otro terminal o Docker). La URL base se configura con `ESTIMATOR_API_BASE_URL`.
 
@@ -137,7 +150,7 @@ uv run streamlit run streamlit_app.py
 
 ## Ejecutar con Docker Compose (desarrollo)
 
-El archivo `docker-compose-dev.yml` esta preparado **solo para levantar la API** en desarrollo local: recarga en caliente (`--reload`) y montaje del codigo `./app:/app/app`. Para tests usa `uv sync --dev` y `pytest` en local (ver seccion **Tests**).
+El archivo `docker-compose-dev.yml` está preparado **solo para levantar la API** en desarrollo local: recarga en caliente (`--reload`) y montaje del código `./app:/app/app`. Para tests usa `uv sync --dev` y `pytest` en local (ver sección **Tests**).
 
 Pasos:
 
@@ -161,7 +174,7 @@ docker compose -f docker-compose-dev.yml up
 
 4. Abre la API en `http://127.0.0.1:8000`.
 
-Comandos utiles:
+Comandos útiles:
 
 ```bash
 # Ejecutar en segundo plano
@@ -180,65 +193,47 @@ Notas:
 - El `healthcheck` apunta a `GET /health`.
 - Si en Windows/Mac no detecta cambios con `--reload`, habilita `WATCHFILES_FORCE_POLLING=true` en el servicio.
 
-## Ejecutar con Docker Compose (produccion)
+## Ejecutar con Docker Compose (producción)
 
-El `docker-compose` de produccion aun no esta creado.
+El `docker-compose` de producción aún no está creado.
 
-Cuando se agregue, la idea sera:
+Cuando se agregue, la idea será:
 
-- Ejecutar sin volumen de codigo.
+- Ejecutar sin volumen de código.
 - Ejecutar sin `--reload`.
 - Inyectar variables de entorno desde el orquestador/entorno de despliegue.
 
 ## Endpoints
 
-### `POST /api/v1/estimate` — respuesta completa (JSON)
+### `POST /api/v1/estimate` — streaming SSE (único flujo)
+
+Cuerpo JSON (`EstimationRequest`):
 
 ```json
 {
-  "transcription": "Cliente: necesitamos un portal B2B con autenticación, panel admin y reportes...",
-  "model": null,
-  "max_tokens": 4000,
-  "example_format": "markdown",
-  "use_examples": true,
-  "skip_cache": false,
-  "evaluate": false
+  "description": "Necesitamos un portal B2B con autenticación, panel admin y reportes de uso. Integración con ERP existente vía API documentada.",
+  "project_type": "web_saas",
+  "detail_level": "medium",
+  "output_format": "line_items"
 }
 ```
 
-Respuesta:
-
-```json
-{
-  "estimation": "## Portal B2B ...",
-  "model": "gpt-4o-mini",
-  "provider": "openai",
-  "finish_reason": "stop",
-  "preprocessing": "none",
-  "usage": { "input_tokens": 1240, "output_tokens": 430, "total_tokens": 1670 },
-  "cache_hit": false,
-  "cost_usd": 0.000446,
-  "validation": null
-}
-```
-
-### `POST /api/v1/estimate/stream` — streaming SSE
-
-Mismo payload que `/estimate` (sin `evaluate`). Emite tres tipos de eventos SSE:
+Respuesta: **`text/event-stream`** (Server-Sent Events). Eventos:
 
 | Evento | Contenido |
 |---|---|
-| `token` | Fragmento de texto plano (se acumula en el cliente) |
-| `metrics` | JSON con modelo, provider, usage, cache_hit, cost_usd, finish_reason, response_seconds |
-| `done` | `[DONE]` — señal de fin de stream |
-| `error` | Mensaje de error si algo falla en servidor |
+| `token` | Fragmento de texto plano (el cliente acumula la estimación) |
+| `metrics` | JSON: `model`, `provider`, `usage`, `cache_hit`, `cost_usd`, `finish_reason`, `response_seconds`, `prompt_version`, etc. |
+| `done` | `[DONE]` — fin del stream |
+| `error` | Mensaje de error si falla el procesamiento |
 
-Ejemplo `curl`:
+Ejemplo con `curl` (stream en consola):
 
 ```bash
-curl -X POST "http://127.0.0.1:8000/api/v1/estimate" \
+curl -N -X POST "http://127.0.0.1:8000/api/v1/estimate" \
   -H "Content-Type: application/json" \
-  -d '{"transcription":"En la reunión con el cliente se discutió la necesidad de un plugin eCommerce para descuentos por volumen..."}'
+  -H "Accept: text/event-stream" \
+  -d "{\"description\":\"CRM pequeño con auth, contactos y roles. MVP orientativo seis semanas. Texto extra para superar el mínimo de 20 caracteres.\",\"project_type\":\"web_saas\",\"detail_level\":\"medium\",\"output_format\":\"line_items\"}"
 ```
 
 ### Meta y salud
