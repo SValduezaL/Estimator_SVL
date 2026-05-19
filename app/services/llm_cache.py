@@ -15,15 +15,6 @@ import redis
 
 log = logging.getLogger(__name__)
 
-STREAM_REPLAY_CHUNK_SIZE = 1000
-
-
-def chunk_text_for_sse(text: str, size: int = STREAM_REPLAY_CHUNK_SIZE) -> list[str]:
-    """Parte un texto largo en trozos para emitir eventos ``token`` en SSE."""
-    if not text:
-        return []
-    return [text[i : i + size] for i in range(0, len(text), size)]
-
 
 class EstimationCache:
     """Envoltorio fino sobre redis-py con clave determinista y TTL."""

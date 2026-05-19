@@ -13,7 +13,7 @@ app = FastAPI(
     description=(
         "Servicio FastAPI para generar estimaciones de software desde descripciones "
         "estructuradas (tipo de proyecto, nivel de detalle, formato de salida) usando "
-        "arquitectura CAG (contexto estático inyectado en prompt), con respuesta solo vía streaming SSE."
+        "arquitectura CAG (contexto estático inyectado en prompt), con respuesta JSON."
     ),
 )
 

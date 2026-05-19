@@ -10,7 +10,6 @@ from fastapi.testclient import TestClient
 from app.config import Settings, get_settings
 from app.main import app
 
-# Contenido simulado para respuestas no streaming del stub (los tests del endpoint usan solo stream).
 _LITELLM_STUB_COMPLETION_MARKDOWN = "## Estimación de prueba\n\nContenido mínimo para el doble de LiteLLM."
 
 
@@ -35,6 +34,7 @@ def test_settings() -> Settings:
 def litellm_stub_log(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
     """Sustituye LiteLLM/Router por dobles que registran kwargs y devuelven respuesta fija."""
     log: list[dict] = []
+
     def make_response(finish_reason: str) -> object:
         usage = type(
             "U",
@@ -49,25 +49,6 @@ def litellm_stub_log(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
         choice = type("C", (), {"finish_reason": finish_reason, "message": msg})()
         return type("R", (), {"choices": [choice], "usage": usage, "model": "gpt-4o-mini"})()
 
-    def _stream_chunks() -> Iterator[object]:
-        d1 = type("D1", (), {"content": "stream-chunk"})()
-        ch1 = type("Ch1", (), {"delta": d1})()
-        c1 = type("C1", (), {"choices": [ch1], "usage": None})()
-        yield c1
-        d2 = type("D2", (), {"content": None})()
-        ch2 = type("Ch2", (), {"delta": d2})()
-        usage = type(
-            "Us",
-            (),
-            {
-                "prompt_tokens": 2,
-                "completion_tokens": 2,
-                "total_tokens": 4,
-            },
-        )()
-        c2 = type("C2", (), {"choices": [ch2], "usage": usage})()
-        yield c2
-
     import app.services.llm_wrapper as lw_mod
 
     class FakeRouter:
@@ -76,8 +57,6 @@ def litellm_stub_log(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
 
         def completion(self, model: str, **kwargs: object) -> object:
             log.append({"source": "router", "route_model": model, **kwargs})
-            if kwargs.get("stream"):
-                return _stream_chunks()
             max_t = int(kwargs.get("max_tokens") or 4000)
             fr = "length" if max_t <= 200 else "stop"
             return make_response(fr)
@@ -86,8 +65,6 @@ def litellm_stub_log(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
 
     def litellm_completion(**kwargs: object) -> object:
         log.append({"source": "litellm", **kwargs})
-        if kwargs.get("stream"):
-            return _stream_chunks()
         max_t = int(kwargs.get("max_tokens") or 4000)
         fr = "length" if max_t <= 200 else "stop"
         return make_response(fr)

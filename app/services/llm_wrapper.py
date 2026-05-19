@@ -1,7 +1,7 @@
 """Cliente LLM unificado con LiteLLM: Router (fallback), caché exacta y coste USD.
 
 La orquestación de prompts CAG vive en ``app/prompts/``; este módulo se limita a
-``completion`` / streaming y Redis. Los precios USD por token están en ``llm_pricing.py``.
+``completion`` y Redis. Los precios USD por token están en ``llm_pricing.py``.
 Sin structlog (``logging`` estándar).
 """
 
@@ -9,31 +9,20 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Iterator
+from typing import Any
 
 import litellm
 from litellm import Router
 
 from app.config import Settings
-from app.services.llm_cache import EstimationCache, chunk_text_for_sse
+from app.services.llm_cache import EstimationCache
 from app.services.llm_pricing import (
     estimate_cost_usd,
     normalise_model_name,
     provider_from_model,
 )
-from app.services.llm_service import StreamEvent
 
 log = logging.getLogger(__name__)
-
-
-def _extract_delta(chunk: Any) -> str:
-    """Extrae el delta de texto de un chunk de streaming (formato OpenAI-compatible)."""
-    try:
-        delta = chunk.choices[0].delta
-    except (AttributeError, IndexError, TypeError):
-        return ""
-    content = getattr(delta, "content", None)
-    return content or ""
 
 
 def _usage_tokens(usage: Any) -> tuple[int, int, int]:
@@ -120,17 +109,12 @@ class LLMWrapper:
         max_tokens: int,
         thinking_budget: int | None,
         model_override: str | None,
-        stream: bool,
     ) -> dict[str, Any]:
         kwargs: dict[str, Any] = {
             "messages": messages,
             "max_tokens": max_tokens,
             "temperature": self._temperature,
         }
-        if stream:
-            kwargs["stream"] = True
-            if provider_from_model(model_override or self._primary_model) == "openai":
-                kwargs["stream_options"] = {"include_usage": True}
 
         if thinking_budget is not None:
             target = model_override or self._primary_model
@@ -160,7 +144,7 @@ class LLMWrapper:
             )
         return self.router.completion(model="estimator", **kwargs)
 
-    def stream_events(
+    def generate(
         self,
         *,
         system_prompt: str,
@@ -169,8 +153,8 @@ class LLMWrapper:
         max_tokens: int | None = None,
         thinking_budget: int | None = None,
         skip_cache: bool = False,
-    ) -> Iterator[StreamEvent]:
-        """Eventos chunk + done (métricas) con LiteLLM streaming y caché exacta."""
+    ) -> tuple[str, dict[str, Any]]:
+        """Genera una estimación completa con LiteLLM y caché exacta."""
         max_t = max_tokens if max_tokens is not None else self._settings.max_tokens
         cache_key_model = model_override or self._primary_model
         cache_key: str | None = None
@@ -186,26 +170,23 @@ class LLMWrapper:
             cached = self._cache.get(cache_key)
             if cached:
                 full = str(cached.get("estimation", ""))
-                log.info("stream_cache_hit chars=%s", len(full))
-                for piece in chunk_text_for_sse(full):
-                    yield StreamEvent(type="chunk", data={"text": piece})
+                log.info("generate_cache_hit chars=%s", len(full))
                 usage = cached.get(
                     "usage",
                     {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
                 )
-                prov = str(cached.get("provider") or provider_from_model(str(cached.get("model", cache_key_model))))
-                yield StreamEvent(
-                    type="done",
-                    data={
-                        "usage": dict(usage),
-                        "usage_available": True,
-                        "finish_reason": str(cached.get("finish_reason", "stop")),
-                        "cache_hit": True,
-                        "provider": prov,
-                        "cost_usd": float(cached.get("cost_usd", 0.0)),
-                    },
+                prov = str(
+                    cached.get("provider")
+                    or provider_from_model(str(cached.get("model", cache_key_model)))
                 )
-                return
+                return full, {
+                    "usage": dict(usage),
+                    "usage_available": True,
+                    "finish_reason": str(cached.get("finish_reason", "stop")),
+                    "cache_hit": True,
+                    "provider": prov,
+                    "cost_usd": float(cached.get("cost_usd", 0.0)),
+                }
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -216,29 +197,15 @@ class LLMWrapper:
             max_tokens=max_t,
             thinking_budget=thinking_budget,
             model_override=model_override,
-            stream=True,
         )
-        log.info("llm_stream_started model=%s", cache_key_model)
+        log.info("llm_generate_started model=%s", cache_key_model)
         t0 = time.perf_counter()
-        full_text: list[str] = []
-        input_tokens = 0
-        output_tokens = 0
-        usage_available = False
         try:
-            stream = self._dispatch(model_override=model_override, **kwargs)
-            for chunk in stream:
-                usage = getattr(chunk, "usage", None)
-                if usage is not None:
-                    input_tokens, output_tokens, _ = _usage_tokens(usage)
-                    usage_available = True
-                delta = _extract_delta(chunk)
-                if delta:
-                    full_text.append(delta)
-                    yield StreamEvent(type="chunk", data={"text": delta})
+            response = self._dispatch(model_override=model_override, **kwargs)
         except Exception as exc:
             latency_ms = int((time.perf_counter() - t0) * 1000)
             log.error(
-                "llm_stream_failed error_type=%s error=%s latency_ms=%s",
+                "llm_generate_failed error_type=%s error=%s latency_ms=%s",
                 type(exc).__name__,
                 exc,
                 latency_ms,
@@ -246,12 +213,16 @@ class LLMWrapper:
             raise
 
         latency_ms = int((time.perf_counter() - t0) * 1000)
-        rendered = "".join(full_text)
-        log.info("llm_stream_completed latency_ms=%s chars=%s", latency_ms, len(rendered))
+        choice = response.choices[0]
+        rendered = (getattr(choice.message, "content", None) or "").strip()
+        finish_reason = str(getattr(choice, "finish_reason", None) or "stop")
+        input_tokens, output_tokens, total_tokens = _usage_tokens(getattr(response, "usage", None))
+        usage_available = getattr(response, "usage", None) is not None
+        log.info("llm_generate_completed latency_ms=%s chars=%s", latency_ms, len(rendered))
 
         resolved_model = normalise_model_name(cache_key_model)
-        stream_provider = provider_from_model(resolved_model)
-        stream_cost = estimate_cost_usd(resolved_model, input_tokens, output_tokens)
+        gen_provider = provider_from_model(resolved_model)
+        gen_cost = estimate_cost_usd(resolved_model, input_tokens, output_tokens)
 
         if self._cache is not None and cache_key is not None and not skip_cache:
             self._cache.set(
@@ -259,30 +230,27 @@ class LLMWrapper:
                 {
                     "estimation": rendered,
                     "model": resolved_model,
-                    "provider": stream_provider,
-                    "finish_reason": "stop",
+                    "provider": gen_provider,
+                    "finish_reason": finish_reason,
                     "usage": {
                         "input_tokens": input_tokens,
                         "output_tokens": output_tokens,
-                        "total_tokens": input_tokens + output_tokens,
+                        "total_tokens": total_tokens,
                     },
                     "latency_ms": latency_ms,
-                    "cost_usd": stream_cost,
+                    "cost_usd": gen_cost,
                 },
             )
 
-        yield StreamEvent(
-            type="done",
-            data={
-                "usage": {
-                    "input_tokens": input_tokens,
-                    "output_tokens": output_tokens,
-                    "total_tokens": input_tokens + output_tokens,
-                },
-                "usage_available": usage_available,
-                "cache_hit": False,
-                "finish_reason": "stop",
-                "provider": stream_provider,
-                "cost_usd": stream_cost,
+        return rendered, {
+            "usage": {
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "total_tokens": total_tokens,
             },
-        )
+            "usage_available": usage_available,
+            "cache_hit": False,
+            "finish_reason": finish_reason,
+            "provider": gen_provider,
+            "cost_usd": gen_cost,
+        }

@@ -3,6 +3,7 @@
 import pytest
 
 from app.prompts.registry import ESTIMATION_PROMPT_VERSION
+from tests.conftest import _LITELLM_STUB_COMPLETION_MARKDOWN
 
 TRANSCRIPTION = (
     "We need a small CRM with auth, contacts and roles. MVP six weeks. "
@@ -24,20 +25,20 @@ def _first_router_kwargs(log: list[dict]) -> dict:
     raise AssertionError("no router completion")
 
 
-def test_stream_emits_token_metrics_done(client, litellm_stub_log: list[dict]) -> None:
-    with client.stream("POST", "/api/v1/estimate", json=ESTIMATE_PAYLOAD) as response:
-        assert response.status_code == 200
-        raw = response.read().decode("utf-8")
+def test_estimate_returns_json_with_metrics(client, litellm_stub_log: list[dict]) -> None:
+    response = client.post("/api/v1/estimate", json=ESTIMATE_PAYLOAD)
+    assert response.status_code == 200
+    data = response.json()
 
-    assert "event: token" in raw
-    assert "stream-chunk" in raw
-    assert "event: metrics" in raw
-    assert ESTIMATION_PROMPT_VERSION in raw
-    assert "prompt_version_created_at" in raw
-    assert "2026-05-13" in raw
-    assert "event: done" in raw
-    assert "[DONE]" in raw
+    assert data["text"] == _LITELLM_STUB_COMPLETION_MARKDOWN
+    assert data["prompt_version"] == ESTIMATION_PROMPT_VERSION
+    assert data["prompt_version_created_at"] == "2026-05-13"
+    assert data["cache_hit"] is False
+    assert data["usage"]["input_tokens"] == 1234
+    assert data["usage"]["output_tokens"] == 567
+    assert data["usage"]["total_tokens"] == 1801
     assert sum(1 for c in litellm_stub_log if c.get("source") == "router") == 1
+    assert "stream" not in _first_router_kwargs(litellm_stub_log)
 
     messages = _first_router_kwargs(litellm_stub_log)["messages"]
     user = next(m["content"] for m in messages if m["role"] == "user")

@@ -62,7 +62,7 @@ class GenerationOptions:
 
 
 class EstimationRequest(BaseModel):
-    """Entrada estructurada para solicitar una estimación (solo streaming)."""
+    """Entrada estructurada para solicitar una estimación."""
 
     description: str = Field(
         min_length=20,
@@ -85,8 +85,25 @@ class EstimationRequest(BaseModel):
         )
 
 
+class TokenUsageResponse(BaseModel):
+    """Consumo de tokens de una estimación."""
+
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+
+
 class EstimationResponse(BaseModel):
-    """Contrato de salida lógica (la entrega HTTP real es streaming SSE)."""
+    """Respuesta JSON de ``POST /api/v1/estimate`` (texto + métricas)."""
 
     text: str
     prompt_version: str
+    prompt_version_created_at: str
+    model: str
+    provider: str
+    usage: TokenUsageResponse
+    usage_available: bool
+    cache_hit: bool
+    finish_reason: str
+    cost_usd: float
+    response_seconds: float

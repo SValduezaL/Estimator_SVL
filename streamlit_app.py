@@ -1,10 +1,8 @@
-"""Interfaz Streamlit: formulario estructurado y streaming SSE hacia la API."""
+"""Interfaz Streamlit: formulario estructurado y cliente HTTP hacia la API."""
 
 from __future__ import annotations
 
-import json
 import os
-from collections.abc import Iterator
 from typing import Any
 
 import httpx
@@ -29,7 +27,7 @@ MIN_DESCRIPTION_LEN = 20
 _api_base = (
     (os.getenv("ESTIMATOR_API_BASE_URL") or os.getenv("API_BASE_URL") or "http://localhost:8000").rstrip("/")
 )
-STREAM_ENDPOINT = f"{_api_base}/api/v1/estimate"
+ESTIMATE_ENDPOINT = f"{_api_base}/api/v1/estimate"
 
 st.set_page_config(
     page_title="Estimador CAG",
@@ -47,57 +45,17 @@ _preview_request = EstimationRequest(
 _system_prompt, _user_prompt_preview = render_estimation_prompt(_preview_request)
 
 
-def _sse_data_payload(line: str) -> str:
-    if line.startswith("data: "):
-        return line[6:]
-    if line.startswith("data:"):
-        return line[5:]
-    return line
-
-
-def stream_estimation_events(payload: dict[str, Any]) -> Iterator[dict[str, Any]]:
-    """POST al endpoint SSE y emite eventos (token, metrics, done, error)."""
+def request_estimation(payload: dict[str, Any]) -> dict[str, Any]:
+    """POST al endpoint de estimación y devuelve la respuesta JSON."""
     timeout = httpx.Timeout(300.0, connect=15.0)
-    with httpx.stream(
-        "POST",
-        STREAM_ENDPOINT,
+    response = httpx.post(
+        ESTIMATE_ENDPOINT,
         json=payload,
         timeout=timeout,
-        headers={"Accept": "text/event-stream", "Content-Type": "application/json"},
-    ) as response:
-        response.raise_for_status()
-        current_event = "message"
-        data_lines: list[str] = []
-        for raw_line in response.iter_lines():
-            if raw_line is None:
-                continue
-            if raw_line == "":
-                if data_lines:
-                    payload_raw = "\n".join(data_lines)
-                    data_lines = []
-                    if current_event == "token":
-                        yield {"event": "token", "data": payload_raw}
-                    elif current_event == "done":
-                        yield {"event": "done", "data": payload_raw}
-                    elif current_event == "metrics":
-                        try:
-                            parsed = json.loads(payload_raw)
-                        except json.JSONDecodeError:
-                            parsed = {}
-                        yield {"event": "metrics", "data": parsed}
-                    elif current_event == "error":
-                        yield {"event": "error", "data": payload_raw}
-                    else:
-                        try:
-                            yield {"event": current_event, "data": json.loads(payload_raw)}
-                        except json.JSONDecodeError:
-                            yield {"event": current_event, "data": {"raw": payload_raw}}
-                current_event = "message"
-                continue
-            if raw_line.startswith("event:"):
-                current_event = raw_line[6:].strip() or "message"
-            elif raw_line.startswith("data:"):
-                data_lines.append(_sse_data_payload(raw_line))
+        headers={"Content-Type": "application/json"},
+    )
+    response.raise_for_status()
+    return response.json()
 
 
 def _store_metrics_payload(data: dict[str, Any]) -> None:
@@ -127,7 +85,7 @@ if "last_metrics_raw" not in st.session_state:
     st.session_state.last_metrics_raw = None
 
 st.title("Estimador de software (CAG)")
-st.caption("Formulario estructurado; la estimación llega en streaming con `st.write_stream`.")
+st.caption("Formulario estructurado; la estimación llega como respuesta JSON completa.")
 
 with st.form("estimation_form"):
     description = st.text_area(
@@ -174,31 +132,15 @@ if submitted:
             st.error(f"Datos no válidos: {exc}")
         else:
             payload = req.model_dump(mode="json")
-            sse_errors: list[str] = []
-
-            def estimation_token_stream() -> Iterator[str]:
-                for event in stream_estimation_events(payload):
-                    et = str(event.get("event", ""))
-                    data = event.get("data")
-                    if et == "token" and isinstance(data, str) and data:
-                        yield data
-                    elif et == "metrics" and isinstance(data, dict):
-                        _store_metrics_payload(data)
-                    elif et == "error":
-                        msg = data if isinstance(data, str) else str(data)
-                        sse_errors.append(msg or "Error SSE")
-                        return
-                    elif et == "done":
-                        pass
-
             try:
+                with st.spinner("Generando estimación..."):
+                    data = request_estimation(payload)
+                _store_metrics_payload(data)
                 st.subheader("Resultado")
-                st.write_stream(estimation_token_stream())
-                if sse_errors:
-                    st.error(sse_errors[0])
+                st.markdown(str(data.get("text", "")))
             except httpx.HTTPError as exc:
                 st.error(
-                    f"No se pudo conectar con la API en `{STREAM_ENDPOINT}`.\n\nDetalle: `{exc}`"
+                    f"No se pudo conectar con la API en `{ESTIMATE_ENDPOINT}`.\n\nDetalle: `{exc}`"
                 )
             except Exception as exc:  # pragma: no cover
                 st.warning(
@@ -206,12 +148,9 @@ if submitted:
                     f"Detalle: `{exc}`"
                 )
 
-# El sidebar debe ir después del streaming: `st.write_stream` actualiza
-# `session_state` durante la misma ejecución; si pintamos métricas antes,
-# Streamlit muestra siempre el valor de la petición anterior.
 with st.sidebar:
     st.header("Estimador CAG")
-    st.caption("Cliente del servicio FastAPI con streaming SSE (Server-Sent Events).")
+    st.caption("Cliente del servicio FastAPI con respuesta JSON.")
 
     tab_help, tab_cag, tab_srv, tab_metrics = st.tabs(["Cómo funciona", "Prompt CAG", "Servidor", "Métricas"])
 
@@ -227,14 +166,14 @@ con rol de estimador, reglas por `detail_level` / `output_format` y few-shot en 
 La descripción del proyecto y los selectores se serializan como `EstimationRequest`
 (JSON) hacia `POST /api/v1/estimate`.
 
-**3. Streaming (SSE)**  
-La API emite `token` (texto), `metrics` (JSON) y `done`. Esta interfaz usa
-`st.write_stream` con un generador que solo hace `yield` de los tokens; el
-JSON de `metrics` se guarda en `st.session_state` al llegar el evento.
+**3. Respuesta JSON**  
+La API devuelve el texto de la estimación y las métricas en un solo cuerpo JSON.
+Esta interfaz muestra el texto con `st.markdown` y guarda las métricas en
+`st.session_state` para el panel lateral.
 
 **4. Caché Redis (opcional)**  
 Si el servidor tiene `REDIS_URL`, peticiones idénticas pueden responder desde
-caché (`cache_hit: true` en `metrics`) sin llamar al LLM.
+caché (`cache_hit: true`) sin llamar al LLM.
             """.strip()
         )
         st.divider()
@@ -253,7 +192,7 @@ caché (`cache_hit: true` en `metrics`) sin llamar al LLM.
 
     with tab_srv:
         st.subheader("Conexión")
-        st.code(STREAM_ENDPOINT, language="text")
+        st.code(ESTIMATE_ENDPOINT, language="text")
         st.divider()
         st.subheader("Entorno local (solo lectura)")
         redis_hint = "sí" if (os.getenv("REDIS_URL") or "").strip() else "no"
@@ -299,9 +238,9 @@ caché (`cache_hit: true` en `metrics`) sin llamar al LLM.
                 label="usage_available",
                 value=ua_txt,
                 help=(
-                    "Indica si el proveedor devolvió uso de tokens en el stream. "
-                    " `true`: al menos un chunk incluía usage. "
-                    " `false`: no hubo metadatos de uso en los chunks, en cuyo caso "
+                    "Indica si el proveedor devolvió uso de tokens en la respuesta. "
+                    " `true`: la respuesta incluía metadatos de uso. "
+                    " `false`: no hubo metadatos de uso, en cuyo caso "
                     "los contadores serán 0, salvo que vengan de caché u otra fuente."
                 ),
             )
@@ -314,7 +253,7 @@ caché (`cache_hit: true` en `metrics`) sin llamar al LLM.
             )
 
             if st.session_state.last_metrics_raw:
-                with st.expander("JSON completo del evento `metrics`"):
+                with st.expander("JSON completo de la respuesta"):
                     st.json(st.session_state.last_metrics_raw)
         else:
             st.info("Aún no hay métricas en esta sesión. Envía el formulario principal.")

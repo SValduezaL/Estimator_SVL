@@ -1,19 +1,19 @@
 # Estimador CAG
 
-FastAPI + Streamlit para estimar esfuerzo de desarrollo a partir de una **descripción estructurada del proyecto** (tipo, nivel de detalle y formato de salida). El backend inyecta contexto estático CAG mediante **plantillas Jinja2** (`app/prompts/estimation/…`: system, user y ejemplos few-shot por `project_type`), responde **solo en streaming SSE**, con caché Redis opcional, fallback/reintentos/timeouts en LiteLLM y estimación de coste por tokens.
+FastAPI + Streamlit para estimar esfuerzo de desarrollo a partir de una **descripción estructurada del proyecto** (tipo, nivel de detalle y formato de salida). El backend inyecta contexto estático CAG mediante **plantillas Jinja2** (`app/prompts/estimation/…`: system, user y ejemplos few-shot por `project_type`), responde en **JSON** con texto y métricas, con caché Redis opcional, fallback/reintentos/timeouts en LiteLLM y estimación de coste por tokens.
 
 ## Arquitectura
 
 ```
 app/
-├── routers/        # POST /api/v1/estimate (solo streaming SSE)
+├── routers/        # POST /api/v1/estimate (respuesta JSON)
 ├── services/       # llm_service, llm_wrapper, llm_cache, llm_pricing, evaluation
 ├── prompts/        # Bundles Jinja2 versionados (CAG): registry, loader, estimation/v1|v2
 ├── schemas/        # EstimationRequest / enums (app/schemas/estimation.py)
 ├── fixtures/       # Datos de prueba (p. ej. transcripciones largas)
 ├── dependencies.py  # FastAPI: EstimationCache (Redis) + LLMWrapper inyectables
 └── config.py       # Configuración vía Pydantic BaseSettings + .env
-streamlit_app.py    # Formulario + cliente HTTP con streaming SSE
+streamlit_app.py    # Formulario + cliente HTTP JSON hacia la API
 ```
 
 Módulos clave en `app/services/`:
@@ -21,8 +21,8 @@ Módulos clave en `app/services/`:
 | Módulo | Responsabilidad |
 |---|---|
 | `llm_service.py` | Construcción de prompt CAG (system + user estructurado) |
-| `llm_wrapper.py` | Wrapper LiteLLM con streaming, caché y retry |
-| `llm_cache.py` | Caché Redis (`EstimationCache`) y chunking SSE |
+| `llm_wrapper.py` | Wrapper LiteLLM con caché y retry |
+| `llm_cache.py` | Caché Redis (`EstimationCache`) |
 | `llm_pricing.py` | Tabla de costes por modelo y estimación `cost_usd` |
 | `evaluation.py` | Validación heurística de Markdown (uso interno / tests) |
 
@@ -109,7 +109,7 @@ El servicio en `app/services/llm_service.py` usa el patrón de mensajes:
 
 - `system`: rol del modelo, instrucciones por tipo/detalle/formato de salida y bloque few-shot renderizado desde Jinja (`app/prompts/estimation/…`; el estilo de los ejemplos sigue el `output_format` de la petición).
 - `user`: descripción del proyecto y metadatos (`project_type`, `detail_level`, `output_format`), también desde plantillas.
-- `assistant`: estimación generada por el modelo (en el cliente se reconstruye a partir de los eventos `token`).
+- `assistant`: estimación generada por el modelo (campo `text` de la respuesta JSON).
 
 La selección de proveedor se hace con `LLM_PROVIDER` y el modelo con `LLM_MODEL`.
 
@@ -124,31 +124,44 @@ Definido en `app/schemas/estimation.py` (Pydantic v2):
 | `detail_level` | enum | `summary`, `medium`, `detailed` |
 | `output_format` | enum | `phases_table`, `line_items`, `narrative` |
 
-El modelo lógico de salida documentado es `EstimationResponse` (`text`, `prompt_version`); la respuesta HTTP real es **streaming** (ver abajo). El evento SSE `metrics` incluye `prompt_version` junto con uso, coste y caché.
+La respuesta HTTP es `EstimationResponse` (JSON): texto de la estimación, `prompt_version`, uso de tokens, coste, caché y demás métricas en un solo cuerpo.
+
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `text` | `str` | Texto completo de la estimación |
+| `prompt_version` | `str` | Identificador del bundle CAG activo |
+| `prompt_version_created_at` | `str` | Fecha ISO del bundle |
+| `model` | `str` | Modelo LLM usado |
+| `provider` | `str` | Proveedor (`openai`, `anthropic`, …) |
+| `usage` | objeto | `input_tokens`, `output_tokens`, `total_tokens` |
+| `usage_available` | `bool` | Si el proveedor devolvió metadatos de uso |
+| `cache_hit` | `bool` | Si la respuesta vino de Redis |
+| `finish_reason` | `str` | Motivo de fin del modelo |
+| `cost_usd` | `float` | Coste estimado en USD |
+| `response_seconds` | `float` | Latencia de la petición |
 
 ### Caché Redis
 
-Si `REDIS_URL` está configurado, las peticiones idénticas (mismo system + user + modelo + `max_tokens` + `thinking_budget`) se sirven desde Redis sin llamar al LLM. El evento SSE `metrics` incluye `cache_hit: true/false` y `cost_usd`. Los precios por modelo están en `app/services/llm_pricing.py`.
+Si `REDIS_URL` está configurado, las peticiones idénticas (mismo system + user + modelo + `max_tokens` + `thinking_budget`) se sirven desde Redis sin llamar al LLM. La respuesta incluye `cache_hit: true/false` y `cost_usd`. Los precios por modelo están en `app/services/llm_pricing.py`.
 
 ### Interfaz Streamlit
 
-`streamlit_app.py` actúa como cliente HTTP de la API. Envía `POST /api/v1/estimate` con el cuerpo JSON de `EstimationRequest` y **Accept: text/event-stream**:
+`streamlit_app.py` actúa como cliente HTTP de la API. Envía `POST /api/v1/estimate` con el cuerpo JSON de `EstimationRequest`:
 
 - Formulario (`st.form`) con descripción y selectores alineados a los enums del backend.
-- Texto de la estimación en streaming con `st.write_stream`.
-- Panel lateral: **Cómo funciona**, **Prompt CAG**, **Servidor**, **Métricas** (tokens, tiempo, caché, `prompt_version`, coste y JSON de `metrics`).
+- Texto de la estimación con `st.markdown` al recibir la respuesta JSON.
+- Panel lateral: **Cómo funciona**, **Prompt CAG**, **Servidor**, **Métricas** (tokens, tiempo, caché, `prompt_version`, coste y JSON completo).
 
 Para soportar nuevos LLM en el futuro:
 
 1. Agrega el proveedor y su lista de modelos en `LLM_MODELS_BY_PROVIDER`.
 2. Añade los precios del modelo en `app/services/llm_pricing.py` (`MODEL_COSTS`).
-3. Implementa un nuevo adaptador en `app/services/llm_service.py` que cumpla el contrato `BaseProviderClient`.
-4. Registra el adaptador en `PROVIDER_CLIENTS`.
+3. Configura el modelo en LiteLLM (vía `LLM_MODEL` / `LLM_FALLBACK_MODEL`); el wrapper en `llm_wrapper.py` enruta las llamadas.
 
 Para evolucionar el CAG (nuevos ejemplos, tono o estructura del system prompt):
 
 1. Crea o ajusta plantillas bajo `app/prompts/estimation/<nueva_subcarpeta>/` y registra un `PromptBundle` en `app/prompts/registry.py`.
-2. Apunta el bundle por defecto (`DEFAULT_ESTIMATION_BUNDLE`) al `public_id` que quieras exponer en `prompt_version` / métricas SSE.
+2. Apunta el bundle por defecto (`DEFAULT_ESTIMATION_BUNDLE`) al `public_id` que quieras exponer en `prompt_version` / métricas de la respuesta.
 
 ## Ejecutar API
 
@@ -222,7 +235,7 @@ Cuando se agregue, la idea será:
 
 ## Endpoints
 
-### `POST /api/v1/estimate` — streaming SSE (único flujo)
+### `POST /api/v1/estimate` — respuesta JSON
 
 Cuerpo JSON (`EstimationRequest`):
 
@@ -235,21 +248,33 @@ Cuerpo JSON (`EstimationRequest`):
 }
 ```
 
-Respuesta: **`text/event-stream`** (Server-Sent Events). Eventos:
+Respuesta: **`application/json`** (`EstimationResponse`). Ejemplo:
 
-| Evento | Contenido |
-|---|---|
-| `token` | Fragmento de texto plano (el cliente acumula la estimación) |
-| `metrics` | JSON: `model`, `provider`, `usage`, `cache_hit`, `cost_usd`, `finish_reason`, `response_seconds`, `prompt_version`, etc. |
-| `done` | `[DONE]` — fin del stream |
-| `error` | Mensaje de error si falla el procesamiento |
+```json
+{
+  "text": "## Estimación del proyecto\n\n...",
+  "prompt_version": "estimation-v2",
+  "prompt_version_created_at": "2026-05-13",
+  "model": "gpt-4o-mini",
+  "provider": "openai",
+  "usage": {
+    "input_tokens": 1234,
+    "output_tokens": 567,
+    "total_tokens": 1801
+  },
+  "usage_available": true,
+  "cache_hit": false,
+  "finish_reason": "stop",
+  "cost_usd": 0.001234,
+  "response_seconds": 2.45
+}
+```
 
-Ejemplo con `curl` (stream en consola):
+Ejemplo con `curl`:
 
 ```bash
-curl -N -X POST "http://127.0.0.1:8000/api/v1/estimate" \
+curl -X POST "http://127.0.0.1:8000/api/v1/estimate" \
   -H "Content-Type: application/json" \
-  -H "Accept: text/event-stream" \
   -d "{\"description\":\"CRM pequeño con auth, contactos y roles. MVP orientativo seis semanas. Texto extra para superar el mínimo de 20 caracteres.\",\"project_type\":\"web_saas\",\"detail_level\":\"medium\",\"output_format\":\"line_items\"}"
 ```
 
