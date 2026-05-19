@@ -4,7 +4,10 @@ from functools import lru_cache
 
 from fastapi import Depends
 
+from typing import Any
+
 from app.config import Settings, get_settings
+from app.guardrails.pipeline import create_openai_client
 from app.services.llm_cache import EstimationCache
 from app.services.llm_wrapper import LLMWrapper
 
@@ -26,3 +29,11 @@ def get_llm_wrapper(
     cache: EstimationCache | None = Depends(get_estimation_cache),
 ) -> LLMWrapper:
     return LLMWrapper(settings, cache)
+
+
+def get_openai_moderation_client(
+    settings: Settings = Depends(get_settings),
+) -> Any | None:
+    if not settings.guardrails_enabled or not settings.guardrails_moderation_enabled:
+        return None
+    return create_openai_client(settings)

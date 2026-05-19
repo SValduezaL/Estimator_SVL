@@ -14,7 +14,12 @@ import structlog
 from litellm import Router
 
 from app.config import Settings
-from app.schemas.estimation_common import SCHEMA_VERSION, DetailLevel
+from app.guardrails.config import GUARDRAILS_VERSION
+from app.guardrails.exceptions import OutputGuardrailRetryable
+from app.guardrails.filters import build_safe_fallback
+from app.guardrails.output import run_output_guardrails
+from app.guardrails.telemetry import log_guardrail_event
+from app.schemas.estimation_common import SCHEMA_VERSION, DetailLevel, ProjectType
 from app.schemas.estimation_output import EstimationResult
 from app.services.llm_cache import EstimationCache
 from app.services.llm_pricing import (
@@ -29,6 +34,8 @@ from app.services.structured_llm import (
 )
 
 log = structlog.get_logger(__name__)
+
+CACHE_SCHEMA_VERSION = f"{SCHEMA_VERSION}:{GUARDRAILS_VERSION}"
 
 
 def _usage_tokens(usage: Any) -> tuple[int, int, int]:
@@ -389,12 +396,30 @@ class LLMWrapper:
                     )
             raise
 
+    def _apply_output_guardrails(
+        self,
+        result: EstimationResult,
+        *,
+        detail_level: DetailLevel,
+        project_type: ProjectType,
+        source_description: str,
+    ) -> EstimationResult:
+        return run_output_guardrails(
+            result,
+            settings=self._settings,
+            detail_level=detail_level,
+            project_type=project_type,
+            description=source_description,
+        )
+
     def generate_structured(
         self,
         *,
         system_prompt: str,
         user_message: str,
         detail_level: DetailLevel,
+        project_type: ProjectType,
+        source_description: str = "",
         model_override: str | None = None,
         max_tokens: int | None = None,
         thinking_budget: int | None = None,
@@ -413,11 +438,17 @@ class LLMWrapper:
                 model=cache_key_model,
                 max_tokens=max_t,
                 thinking_budget=thinking_budget,
-                schema_version=SCHEMA_VERSION,
+                schema_version=CACHE_SCHEMA_VERSION,
             )
             cached = self._cache.get(cache_key)
             if cached and isinstance(cached.get("result"), dict):
                 result = EstimationResult.model_validate(cached["result"])
+                result = self._apply_output_guardrails(
+                    result,
+                    detail_level=detail_level,
+                    project_type=project_type,
+                    source_description=source_description,
+                )
                 log.info(
                     "llm_structured_completed",
                     log_category="technical",
@@ -439,16 +470,46 @@ class LLMWrapper:
             detail_level=detail_level.value,
         )
         t0 = time.perf_counter()
+        max_out_retries = self._settings.guardrails_output_max_retries
+        result: EstimationResult | None = None
+        raw: Any = None
         try:
-            result, raw = self._call_structured(
-                messages=messages,
-                model_id=cache_key_model,
-                model_override=model_override,
-                max_tokens=max_t,
-                thinking_budget=thinking_budget,
-                detail_level=detail_level,
-                max_validation_retries=max_validation_retries,
-            )
+            for attempt in range(max_out_retries + 1):
+                result, raw = self._call_structured(
+                    messages=messages,
+                    model_id=cache_key_model,
+                    model_override=model_override,
+                    max_tokens=max_t,
+                    thinking_budget=thinking_budget,
+                    detail_level=detail_level,
+                    max_validation_retries=max_validation_retries,
+                )
+                try:
+                    result = self._apply_output_guardrails(
+                        result,
+                        detail_level=detail_level,
+                        project_type=project_type,
+                        source_description=source_description,
+                    )
+                    break
+                except OutputGuardrailRetryable as retry_exc:
+                    if attempt >= max_out_retries:
+                        log.warning(
+                            "output_guardrail_retry_exhausted",
+                            log_category="guardrails",
+                            guardrail_name=retry_exc.guardrail_name,
+                        )
+                        result = build_safe_fallback(
+                            project_type=project_type,
+                            detail_level=detail_level,
+                            reason=retry_exc.guardrail_name,
+                        )
+                        break
+                    log_guardrail_event(
+                        "llm_retry_triggered",
+                        guardrail_name=retry_exc.guardrail_name,
+                        attempt=attempt + 1,
+                    )
         except Exception as exc:
             latency_ms = int((time.perf_counter() - t0) * 1000)
             log.error(

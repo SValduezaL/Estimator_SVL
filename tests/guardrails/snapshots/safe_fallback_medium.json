@@ -1,0 +1,20 @@
+{
+  "summary": "[FUERA_DE_ALCANCE] No se pudo generar una estimación fiable. Amplíe la descripción del alcance, integraciones y restricciones.",
+  "confidence_pct": 30,
+  "phases": [
+    {
+      "name": "Sin estimar",
+      "deliverable": "No se puede dimensionar sin más información sobre alcance, integraciones y equipo.",
+      "stack": [
+        "N/A"
+      ],
+      "hours": 1,
+      "cost_eur": 0,
+      "risks_notes": "Alcance insuficiente para estimar con confianza.",
+      "confidence_pct": null
+    }
+  ],
+  "total_duration_weeks": 1,
+  "total_cost_eur": 0,
+  "reasoning": "## Alcance\nEstimación degradada por guardrails de salida."
+}

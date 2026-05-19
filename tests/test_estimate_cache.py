@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings, get_settings
 from app.dependencies import get_estimation_cache
 from app.main import app
-from app.schemas.estimation_common import SCHEMA_VERSION
+from app.services.llm_wrapper import CACHE_SCHEMA_VERSION
 from app.schemas.estimation_request import EstimationRequest
 from app.services.llm_cache import EstimationCache
 from app.services.llm_service import build_estimation_cache_inputs
@@ -30,6 +30,7 @@ def test_settings() -> Settings:
             "openai": ["gpt-4o-mini", "gpt-4o"],
             "anthropic": ["claude-haiku-4-5"],
         },
+        guardrails_enabled=False,
     )
 
 
@@ -107,7 +108,7 @@ def test_cache_hit_uses_stored_model_not_configured_primary(
         model=model_used,
         max_tokens=max_tokens,
         thinking_budget=thinking_budget,
-        schema_version=SCHEMA_VERSION,
+        schema_version=CACHE_SCHEMA_VERSION,
     )
     cache.set(
         cache_key,

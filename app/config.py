@@ -32,6 +32,27 @@ class Settings(BaseSettings):
     redis_url: str | None = Field(default=None)
     cache_ttl_seconds: int = Field(default=86400, ge=60, le=604800)
 
+    # Guardrails (defense-in-depth)
+    guardrails_enabled: bool = Field(default=True)
+    guardrails_moderation_enabled: bool = Field(default=True)
+    guardrails_injection_enabled: bool = Field(default=True)
+    guardrails_pii_input_enabled: bool = Field(default=True)
+    guardrails_pii_output_enabled: bool = Field(default=True)
+    guardrails_output_semantic_enabled: bool = Field(default=True)
+    guardrails_moderation_log_only: bool = Field(default=False)
+    guardrails_injection_log_only: bool = Field(default=False)
+    guardrails_pii_input_log_only: bool = Field(default=False)
+    guardrails_moderation_model: str = Field(default="omni-moderation-latest")
+    guardrails_moderation_thresholds: dict[str, float] = Field(default_factory=dict)
+    guardrails_injection_pattern_version: str = Field(default="v1")
+    guardrails_fail_open_on_moderation_error: bool = Field(default=True)
+    guardrails_output_max_retries: int = Field(default=1, ge=0, le=5)
+    guardrails_judge_enabled: bool = Field(default=False)
+    guardrails_min_eur_per_hour: float = Field(default=20.0, ge=1.0, le=500.0)
+    guardrails_max_eur_per_hour: float = Field(default=250.0, ge=1.0, le=2000.0)
+    guardrails_hours_per_week: int = Field(default=40, ge=1, le=80)
+    guardrails_prompt_max_chars: int = Field(default=120_000, ge=10_000, le=500_000)
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -43,6 +64,17 @@ class Settings(BaseSettings):
     @classmethod
     def normalize_provider(cls, value: str) -> str:
         return value.strip().lower()
+
+    @field_validator("guardrails_moderation_thresholds", mode="before")
+    @classmethod
+    def parse_moderation_thresholds(cls, value: Any) -> dict[str, float]:
+        if value is None or value == "":
+            return {}
+        if isinstance(value, str):
+            value = json.loads(value)
+        if not isinstance(value, dict):
+            raise ValueError("GUARDRAILS_MODERATION_THRESHOLDS debe ser un JSON object.")
+        return {str(k): float(v) for k, v in value.items()}
 
     @field_validator("llm_models_by_provider", mode="before")
     @classmethod

@@ -42,6 +42,7 @@ def _test_settings() -> Settings:
         },
         app_env="dev",
         log_level="INFO",
+        guardrails_enabled=False,
     )
 
 

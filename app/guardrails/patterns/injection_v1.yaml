@@ -1,0 +1,38 @@
+version: v1
+patterns:
+  - id: ignore_instructions
+    category: instruction_override
+    pattern: 'ignore\s+(previous|prior|all|the)\s+(instructions?|prompts?|rules?)'
+    flags: IGNORECASE
+  - id: ignore_all_previous
+    category: instruction_override
+    pattern: 'ignore\s+(?:all\s+)?(previous|prior)\s+(instructions?|prompts?|rules?)'
+    flags: IGNORECASE
+  - id: xml_system_tags
+    category: xml_escape
+    pattern: '</?\s*(system|instructions?|prompt)\s*>'
+    flags: IGNORECASE
+  - id: new_instructions
+    category: instruction_override
+    pattern: 'new\s+instructions?\s*[:.\-]'
+    flags: IGNORECASE
+  - id: forget_all
+    category: instruction_override
+    pattern: 'forget\s+(everything|all|previous)'
+    flags: IGNORECASE
+  - id: role_switch
+    category: role_injection
+    pattern: '\byou\s+are\s+now\b'
+    flags: IGNORECASE
+  - id: disregard_context
+    category: instruction_override
+    pattern: '\bdisregard\b.{0,40}\b(instructions?|prompts?|rules?|context|previous|prior)'
+    flags: 'IGNORECASE|DOTALL'
+  - id: jailbreak_dan
+    category: jailbreak
+    pattern: '\bDAN\b.{0,20}\bmode\b'
+    flags: IGNORECASE
+  - id: system_prompt_leak
+    category: system_leak
+    pattern: '(show|reveal|print|repeat)\s+(your\s+)?(system\s+)?(prompt|instructions)'
+    flags: IGNORECASE

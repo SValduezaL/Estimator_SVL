@@ -11,7 +11,9 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.config import Settings, get_settings
-from app.dependencies import get_llm_wrapper
+from app.dependencies import get_llm_wrapper, get_openai_moderation_client
+from app.guardrails import run_input_guardrails, validate_rendered_prompts
+from app.guardrails.exceptions import GuardrailBlocked
 from app.logging.sync import run_sync_with_context
 from app.prompts.registry import DEFAULT_ESTIMATION_BUNDLE
 from app.schemas.estimation import EstimationRequest, EstimationResponse, TokenUsageResponse
@@ -28,6 +30,7 @@ async def create_estimation(
     request: EstimationRequest,
     settings: Settings = Depends(get_settings),
     wrapper: LLMWrapper = Depends(get_llm_wrapper),
+    openai_client=Depends(get_openai_moderation_client),
 ) -> EstimationResponse:
     """Genera una estimación estructurada y devuelve ``result`` + métricas."""
     log.info(
@@ -38,14 +41,38 @@ async def create_estimation(
         description_sha256=hashlib.sha256(request.description.encode("utf-8")).hexdigest(),
     )
 
+    try:
+        input_guarded = run_input_guardrails(
+            request.description,
+            settings=settings,
+            openai_client=openai_client,
+        )
+    except GuardrailBlocked as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from exc
+
+    request_for_llm = request.model_copy(update={"description": input_guarded.text})
+
     opts = request.to_generation_options()
     system_prompt, user_message, model_used, max_tokens, thinking_budget, prompt_bundle = (
         build_estimation_cache_inputs(
             settings=settings,
-            request=request,
+            request=request_for_llm,
             bundle=DEFAULT_ESTIMATION_BUNDLE,
         )
     )
+
+    prompt_check = validate_rendered_prompts(
+        system_prompt=system_prompt,
+        user_message=user_message,
+        settings=settings,
+    )
+    if not prompt_check.passed and prompt_check.policy.value == "exception":
+        log.warning(
+            "prompt_render_guardrail_failed",
+            log_category="guardrails",
+            message=prompt_check.message,
+        )
+        raise HTTPException(status_code=400, detail="Request could not be processed")
 
     loop = asyncio.get_running_loop()
     start = time.perf_counter()
@@ -58,6 +85,8 @@ async def create_estimation(
                 system_prompt=system_prompt,
                 user_message=user_message,
                 detail_level=request.detail_level,
+                project_type=request.project_type,
+                source_description=input_guarded.text,
                 model_override=opts.model,
                 max_tokens=max_tokens,
                 thinking_budget=thinking_budget,
