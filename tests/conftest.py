@@ -5,9 +5,12 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import pytest
+import structlog
 from fastapi.testclient import TestClient
+from structlog.testing import CapturingLogger
 
 from app.config import Settings, get_settings
+from app.logging.config import configure_logging
 from app.main import app
 
 _LITELLM_STUB_COMPLETION_MARKDOWN = "## Estimación de prueba\n\nContenido mínimo para el doble de LiteLLM."
@@ -22,12 +25,34 @@ def _test_settings() -> Settings:
             "openai": ["gpt-4o-mini", "gpt-4o"],
             "anthropic": ["claude-haiku-4-5"],
         },
+        app_env="dev",
+        log_level="INFO",
     )
+
+
+@pytest.fixture(autouse=True)
+def _configure_logging_for_tests() -> Iterator[None]:
+    configure_logging(_test_settings(), version="0.1.0-test")
+    yield
 
 
 @pytest.fixture
 def test_settings() -> Settings:
     return _test_settings()
+
+
+@pytest.fixture
+def capture_logs() -> Iterator[CapturingLogger]:
+    """Logger en memoria para asertos sobre eventos structlog."""
+    cap = CapturingLogger()
+    structlog.configure(
+        processors=[structlog.processors.KeyValueRenderer()],
+        wrapper_class=structlog.make_filtering_bound_logger(0),
+        logger_factory=lambda *_args, **_kwargs: cap,
+        cache_logger_on_first_use=False,
+    )
+    yield cap
+    configure_logging(_test_settings(), version="0.1.0-test")
 
 
 @pytest.fixture
@@ -76,5 +101,6 @@ def litellm_stub_log(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
 @pytest.fixture
 def client(test_settings: Settings, litellm_stub_log: list[dict]) -> TestClient:
     app.dependency_overrides[get_settings] = lambda: test_settings
-    yield TestClient(app)
+    with TestClient(app) as test_client:
+        yield test_client
     app.dependency_overrides.clear()

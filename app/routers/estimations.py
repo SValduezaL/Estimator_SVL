@@ -3,19 +3,23 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import time
 from functools import partial
 
+import structlog
 from fastapi import APIRouter, Depends
 
 from app.config import Settings, get_settings
 from app.dependencies import get_llm_wrapper
+from app.logging.sync import run_sync_with_context
 from app.prompts.registry import DEFAULT_ESTIMATION_BUNDLE
 from app.schemas.estimation import EstimationRequest, EstimationResponse, TokenUsageResponse
 from app.services.llm_service import build_estimation_cache_inputs
 from app.services.llm_wrapper import LLMWrapper
 
 router = APIRouter(prefix="/api/v1", tags=["estimations"])
+log = structlog.get_logger(__name__)
 
 
 @router.post("/estimate", response_model=EstimationResponse)
@@ -25,6 +29,15 @@ async def create_estimation(
     wrapper: LLMWrapper = Depends(get_llm_wrapper),
 ) -> EstimationResponse:
     """Genera una estimación y devuelve texto + métricas en JSON."""
+    log.info(
+        "estimation_requested",
+        log_category="business",
+        project_type=request.project_type.value,
+        detail_level=request.detail_level.value,
+        output_format=request.output_format.value,
+        description_sha256=hashlib.sha256(request.description.encode("utf-8")).hexdigest(),
+    )
+
     opts = request.to_generation_options()
     system_prompt, user_message, model_used, max_tokens, thinking_budget, prompt_bundle = (
         build_estimation_cache_inputs(
@@ -36,7 +49,8 @@ async def create_estimation(
 
     loop = asyncio.get_running_loop()
     start = time.perf_counter()
-    text, metrics = await loop.run_in_executor(
+    text, metrics = await run_sync_with_context(
+        loop,
         None,
         partial(
             wrapper.generate,
@@ -47,6 +61,16 @@ async def create_estimation(
             thinking_budget=thinking_budget,
             skip_cache=opts.skip_cache,
         ),
+    )
+    duration_ms = int((time.perf_counter() - start) * 1000)
+
+    log.info(
+        "estimation_completed",
+        log_category="business",
+        cache_hit=bool(metrics["cache_hit"]),
+        cost_usd=float(metrics["cost_usd"]),
+        duration_ms=duration_ms,
+        model=model_used,
     )
 
     return EstimationResponse(

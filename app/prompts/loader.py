@@ -91,6 +91,7 @@ def render_estimation_prompt(
     combined = f"system{_PROMPT_RENDER_PART_SEPARATOR}{system_prompt}{_PROMPT_RENDER_PART_SEPARATOR}user{_PROMPT_RENDER_PART_SEPARATOR}{user_prompt}"
     _log.info(
         "estimation_prompt_rendered",
+        log_category="technical",
         prompt_version=b.public_id,
         content_sha256=_sha256_hex(combined),
     )

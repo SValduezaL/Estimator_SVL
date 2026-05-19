@@ -2,16 +2,15 @@
 
 La orquestación de prompts CAG vive en ``app/prompts/``; este módulo se limita a
 ``completion`` y Redis. Los precios USD por token están en ``llm_pricing.py``.
-Sin structlog (``logging`` estándar).
 """
 
 from __future__ import annotations
 
-import logging
 import time
 from typing import Any
 
 import litellm
+import structlog
 from litellm import Router
 
 from app.config import Settings
@@ -22,7 +21,7 @@ from app.services.llm_pricing import (
     provider_from_model,
 )
 
-log = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
 
 
 def _usage_tokens(usage: Any) -> tuple[int, int, int]:
@@ -123,9 +122,11 @@ class LLMWrapper:
                 kwargs["max_tokens"] = max(max_tokens, thinking_budget + 1024)
             else:
                 log.warning(
-                    "thinking_budget_ignored_for_provider provider=%s model=%s",
-                    provider_from_model(target),
-                    target,
+                    "thinking_budget_ignored_for_provider",
+                    log_category="technical",
+                    error_recoverable=True,
+                    provider=provider_from_model(target),
+                    model=target,
                 )
         return kwargs
 
@@ -170,7 +171,14 @@ class LLMWrapper:
             cached = self._cache.get(cache_key)
             if cached:
                 full = str(cached.get("estimation", ""))
-                log.info("generate_cache_hit chars=%s", len(full))
+                log.info(
+                    "llm_generate_completed",
+                    log_category="technical",
+                    model=cache_key_model,
+                    cache_hit=True,
+                    latency_ms=0,
+                    chars=len(full),
+                )
                 usage = cached.get(
                     "usage",
                     {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
@@ -198,17 +206,25 @@ class LLMWrapper:
             thinking_budget=thinking_budget,
             model_override=model_override,
         )
-        log.info("llm_generate_started model=%s", cache_key_model)
+        log.info(
+            "llm_generate_started",
+            log_category="technical",
+            model=cache_key_model,
+        )
         t0 = time.perf_counter()
         try:
             response = self._dispatch(model_override=model_override, **kwargs)
         except Exception as exc:
             latency_ms = int((time.perf_counter() - t0) * 1000)
             log.error(
-                "llm_generate_failed error_type=%s error=%s latency_ms=%s",
-                type(exc).__name__,
-                exc,
-                latency_ms,
+                "llm_generate_failed",
+                log_category="technical",
+                error_recoverable=False,
+                error_type=type(exc).__name__,
+                error_message=str(exc),
+                latency_ms=latency_ms,
+                model=cache_key_model,
+                exc_info=True,
             )
             raise
 
@@ -218,7 +234,14 @@ class LLMWrapper:
         finish_reason = str(getattr(choice, "finish_reason", None) or "stop")
         input_tokens, output_tokens, total_tokens = _usage_tokens(getattr(response, "usage", None))
         usage_available = getattr(response, "usage", None) is not None
-        log.info("llm_generate_completed latency_ms=%s chars=%s", latency_ms, len(rendered))
+        log.info(
+            "llm_generate_completed",
+            log_category="technical",
+            latency_ms=latency_ms,
+            chars=len(rendered),
+            model=cache_key_model,
+            cache_hit=False,
+        )
 
         resolved_model = normalise_model_name(cache_key_model)
         gen_provider = provider_from_model(resolved_model)

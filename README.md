@@ -10,6 +10,7 @@ app/
 ├── services/       # llm_service, llm_wrapper, llm_cache, llm_pricing, evaluation
 ├── prompts/        # Bundles Jinja2 versionados (CAG): registry, loader, estimation/v1|v2
 ├── schemas/        # EstimationRequest / enums (app/schemas/estimation.py)
+├── logging/        # structlog: config, middleware X-Request-ID, redacción PII, handlers
 ├── fixtures/       # Datos de prueba (p. ej. transcripciones largas)
 ├── dependencies.py  # FastAPI: EstimationCache (Redis) + LLMWrapper inyectables
 └── config.py       # Configuración vía Pydantic BaseSettings + .env
@@ -83,6 +84,31 @@ La configuración se carga con `Pydantic BaseSettings` desde `app/config.py` y t
 | `LLM_TIMEOUT_SECONDS` | no | Timeout de llamada al LLM (default `120`) |
 | `LLM_NUM_RETRIES` | no | Reintentos ante error (default `2`) |
 | `ESTIMATOR_API_BASE_URL` | no | URL base que usa Streamlit (default `http://localhost:8000`) |
+
+## Logging estructurado
+
+La API usa **structlog** con salida a **stdout** (adecuado para Docker/Kubernetes y agregadores ELK, Loki, Datadog).
+
+| `APP_ENV` | Formato |
+|---|---|
+| `dev` | Consola coloreada legible |
+| `staging`, `prod` | JSON (una línea por evento) |
+
+- **`LOG_LEVEL`**: se aplica al arranque (`DEBUG` … `CRITICAL`).
+- **Correlación**: cada petición HTTP lleva `X-Request-ID` (el cliente puede enviarlo; si no, la API genera uno y lo devuelve en la respuesta).
+- **Contexto en hilos**: las llamadas LLM en `run_in_executor` propagan `request_id` vía `run_sync_with_context`.
+- **PII**: no se registran descripciones ni prompts completos; solo hashes (`description_sha256`, `content_sha256`) y metadatos. Claves sensibles se redactan en el pipeline.
+- **Categorías**: campo `log_category` (`business` \| `technical`); errores recuperables usan `error_recoverable=True`; fallos graves `critical=True`.
+- **Trazas**: `trace_id` / `span_id` reservados para OpenTelemetry (null hasta integrar el SDK).
+- **Ejecutores síncronos**: cualquier `run_in_executor` futuro debe usar `app.logging.sync.run_sync_with_context`.
+
+Consultar logs en Compose:
+
+```bash
+docker compose -f docker-compose-dev.yml logs -f estimator
+```
+
+En **staging/prod**, filtrar por `request_id` en tu agregador, por ejemplo: `request_id:"<uuid>"`.
 
 Notas:
 

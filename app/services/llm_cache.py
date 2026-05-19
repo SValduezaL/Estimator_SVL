@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-import logging
 from typing import Any
 
 import redis
+import structlog
 
-log = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
 
 
 class EstimationCache:
@@ -53,17 +53,42 @@ class EstimationCache:
         try:
             cached = self.redis.get(key)
         except redis.RedisError as exc:
-            log.warning("cache_get_failed: %s", exc)
+            log.warning(
+                "cache_get_failed",
+                log_category="technical",
+                error_recoverable=True,
+                error_type=type(exc).__name__,
+                error_message=str(exc),
+            )
             return None
         if cached:
-            log.info("cache_hit key_prefix=%s", key[:24])
+            log.info(
+                "cache_hit",
+                log_category="technical",
+                key_prefix=key[:24],
+            )
             return json.loads(cached)
-        log.info("cache_miss key_prefix=%s", key[:24])
+        log.info(
+            "cache_miss",
+            log_category="technical",
+            key_prefix=key[:24],
+        )
         return None
 
     def set(self, key: str, response: dict[str, Any]) -> None:
         try:
             self.redis.setex(key, self.ttl, json.dumps(response))
-            log.info("cache_stored key_prefix=%s ttl=%s", key[:24], self.ttl)
+            log.info(
+                "cache_stored",
+                log_category="technical",
+                key_prefix=key[:24],
+                ttl=self.ttl,
+            )
         except redis.RedisError as exc:
-            log.warning("cache_set_failed: %s", exc)
+            log.warning(
+                "cache_set_failed",
+                log_category="technical",
+                error_recoverable=True,
+                error_type=type(exc).__name__,
+                error_message=str(exc),
+            )
