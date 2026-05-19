@@ -4,8 +4,9 @@
 # de entorno del orquestador en lugar de montar .env si aplica.
 
 services:
+  # Redis Stack (RediSearch) para caché semántica vectorial. Sin volumen: estado efímero en dev.
   redis:
-    image: redis:7-alpine
+    image: redis/redis-stack-server:latest
     ports:
       - "6379:6379"
     restart: unless-stopped

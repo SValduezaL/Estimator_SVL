@@ -7,13 +7,14 @@ FastAPI + Streamlit para estimar esfuerzo de desarrollo a partir de una **descri
 ```
 app/
 ├── routers/        # POST /api/v1/estimate (respuesta JSON)
-├── services/       # llm_service, llm_wrapper, llm_cache, llm_pricing, structured_llm
+├── cache/          # Caché exacta v2 + semántica (redisvl), orquestador, embeddings
+├── services/       # llm_service, llm_wrapper, llm_pricing, structured_llm
 ├── guardrails/     # Defense-in-depth: input, output, moderation, injection, PII, policies
 ├── prompts/        # Bundles Jinja2 versionados (CAG): registry, loader, estimation/v3
 ├── schemas/        # request/output/API (estimation_request, estimation_output, estimation.py)
 ├── logging/        # structlog: config, middleware X-Request-ID, redacción, handlers
 ├── fixtures/       # Datos de prueba y few-shot JSON (estimation_examples/)
-├── dependencies.py # FastAPI: EstimationCache, LLMWrapper, cliente moderación OpenAI
+├── dependencies.py # FastAPI: EstimationCacheOrchestrator, LLMWrapper, moderación OpenAI
 └── config.py       # Pydantic BaseSettings + .env (LLM + guardrails)
 streamlit_app.py    # Formulario + cliente HTTP JSON hacia la API
 ```
@@ -37,7 +38,7 @@ Módulos clave en `app/services/`:
 |---|---|
 | `llm_service.py` | Construcción de prompt CAG (system + user estructurado) |
 | `llm_wrapper.py` | Wrapper LiteLLM con caché y retry |
-| `llm_cache.py` | Caché Redis (`EstimationCache`) |
+| `app/cache/` | Caché exacta pre-render + semántica vectorial (`EstimationCacheOrchestrator`) |
 | `llm_pricing.py` | Tabla de costes por modelo y estimación `cost_usd` |
 | `structured_llm.py` | Validación de ``reasoning`` y utilidades Instructor |
 
@@ -216,7 +217,9 @@ La API usa **structlog** (`app/logging/`) con salida a **stdout** (Docker/Kubern
 | `estimation_validation_failed` | business | `ReasoningLengthError` |
 | `estimation_prompt_rendered` | technical | Tras Jinja2 |
 | `llm_structured_started` / `completed` / `failed` | technical | Ciclo Instructor |
-| `cache_hit` / `cache_miss` / `cache_stored` | technical | Redis |
+| `cache_hit` / `cache_miss` / `cache_stored` | technical | Redis exacta |
+| `semantic_cache_lookup` / `semantic_cache_hit` / `semantic_cache_miss` / `semantic_cache_store` | technical | Redis Stack |
+| `semantic_cache_hit_log_only` / `semantic_cache_similarity_below_threshold` | technical | Calibración semántica |
 | `reasoning_truncated` | technical | Recorte suave de `reasoning` |
 
 ### Eventos de guardrails (`log_category=guardrails`)
@@ -314,9 +317,125 @@ Definido en `app/schemas/estimation_request.py`:
 
 `EstimationResult` (en `app/schemas/estimation_output.py`) incluye validadores de negocio (suma de `cost_eur`, prefijo si baja confianza, etc.).
 
-### Caché Redis
+### Caché Redis (exacta + semántica)
 
-Si `REDIS_URL` está configurado, las peticiones idénticas (mismo system + user + modelo + `max_tokens` + `thinking_budget` + versión de schema/guardrails) se sirven desde Redis sin llamar al LLM. Tras un cache hit se ejecutan igualmente los **output guardrails**. La respuesta incluye `cache_hit: true/false` y `cost_usd`. Los precios por modelo están en `app/services/llm_pricing.py`.
+La caché vive en `app/cache/` y se coordina con `EstimationCacheOrchestrator` (`orchestrator.py`). El router [`app/routers/estimations.py`](app/routers/estimations.py) hace las **lecturas**; [`app/services/llm_wrapper.py`](app/services/llm_wrapper.py) hace las **escrituras** tras validar la salida del LLM.
+
+**Requisitos:** `REDIS_URL` definido. La capa semántica además exige `SEMANTIC_CACHE_ENABLED=true`, API key del proveedor de embeddings (p. ej. OpenAI) y **Redis Stack** con RediSearch (`redis/redis-stack-server` en `docker-compose-dev.yml`).
+
+#### Pipeline completo de una estimación
+
+```mermaid
+flowchart TD
+    A[Validación Pydantic EstimationRequest] --> B[Input guardrails]
+    B --> C[build_cache_context]
+    C --> D{REDIS_URL y no skip_cache?}
+    D -->|no| H[Render prompts CAG]
+    D -->|sí| E[Orquestador.lookup]
+    E --> F{Exact v2 hit?}
+    F -->|sí| G[Output guardrails sobre resultado cacheado]
+    F -->|no| S{Semantic hit?}
+    S -->|sí| G
+    S -->|no| H
+    G --> R[EstimationResponse cache_hit true]
+    H --> I[validate_rendered_prompts]
+    I --> J[LLMWrapper.generate_structured]
+    J --> K[LLM + validación Instructor]
+    K --> L[Output guardrails + reintentos]
+    L --> M{Resultado cacheable?}
+    M -->|sí| N[Orquestador.store exact + semantic]
+    M -->|no| O[Sin escritura en caché]
+    N --> P[EstimationResponse cache_hit false]
+    O --> P
+```
+
+| Paso | Dónde | Qué ocurre |
+|------|--------|------------|
+| 1 | Router | Validación del body y **input guardrails** (siempre; la caché no los omite). |
+| 2 | Router | `build_cache_context()` con descripción ya saneada, bundle CAG, modelo, `max_tokens`, `thinking_budget`, `CACHE_SCHEMA_VERSION`. |
+| 3 | Router | **`orchestrator.lookup(cache_ctx)`** — ver tabla siguiente. |
+| 4a | Router | Si **hit** (exact o semantic): `run_output_guardrails()` sobre el `EstimationResult` recuperado y respuesta con `cache_hit: true` (**sin render ni LLM**). |
+| 4b | Router | Si **miss**: render de prompts, validación de prompts, llamada a `generate_structured()`. |
+| 5 | LLMWrapper | LLM, validación estructurada y **output guardrails** (con reintentos si aplica). |
+| 6 | LLMWrapper | **`orchestrator.store()`** solo si la respuesta es cacheable — ver políticas de escritura. |
+
+Los **output guardrails** se ejecutan siempre antes de devolver al cliente, tanto en hit como en miss. Un hit de caché **nunca** salta guardrails de salida.
+
+#### Verificaciones (lookup) — orden y condiciones
+
+`EstimationCacheOrchestrator.lookup()` en [`app/cache/orchestrator.py`](app/cache/orchestrator.py) solo corre si `REDIS_URL` está configurado y `skip_cache` es falso (`app/cache/policies.py`).
+
+| Orden | Capa | Módulo | Condición de activación | Criterio de hit |
+|-------|------|--------|-------------------------|-----------------|
+| 1 | **Exacta v2** | `app/cache/exact.py` | Siempre que haya Redis y lectura permitida | Clave Redis `estimation:exact:v2:{schema_version}:{sha256(...)}` con JSON del payload; coincide descripción **normalizada** + bucket + `model` + `max_tokens` + `thinking_budget`. |
+| 2 | **Semántica** | `app/cache/semantic.py` | Solo si exact miss **y** `SEMANTIC_CACHE_ENABLED=true` **y** el índice vectorial se inicializó | Mismo **bucket** tag; similitud coseno ≥ `SEMANTIC_CACHE_THRESHOLD` (default `0.92`). Un embedding por lookup (reutilizado en store si hay miss). |
+
+**Bucket compuesto** (aislamiento entre prompts, formatos y configuraciones), definido en [`app/cache/keys.py`](app/cache/keys.py):
+
+```
+{prompt_version}:{project_type}:{detail_level}:{output_format}:{CACHE_SCHEMA_VERSION}
+```
+
+- `prompt_version`: `public_id` del bundle (p. ej. `estimation-v3-structured`).
+- `output_format`: `line_items` (bundles v1/v2) o `structured` (v3).
+- `CACHE_SCHEMA_VERSION`: `estimation.v1:guardrails.v1` — cambios en guardrails o schema invalidan entradas antiguas sin borrado manual.
+
+**Comportamiento semántica en lookup:**
+
+| Situación | Efecto en la petición | Evento structlog (técnico) |
+|-----------|------------------------|----------------------------|
+| Hit por encima del umbral | Respuesta desde caché; `cache_hit: true` | `semantic_cache_hit` |
+| Similitud &lt; umbral | Continúa a LLM (miss) | `semantic_cache_similarity_below_threshold` |
+| `SEMANTIC_CACHE_LOG_ONLY=true` | Solo telemetría; **no** devuelve hit | `semantic_cache_hit_log_only` |
+| Índice vacío / sin vecinos | Miss | `semantic_cache_miss` (`reason=empty_index`) |
+| Fallo embedding / Redis | Miss degradado (no tumba la API) | `semantic_cache_embedding_failed` / warnings |
+
+En hit exacto, la búsqueda semántica **no se ejecuta** (ahorro de embedding).
+
+#### Escrituras (store) — cuándo y qué se guarda
+
+Las escrituras ocurren **solo en miss de caché**, al final de `LLMWrapper.generate_structured()`, **después** de:
+
+- validación estructurada (Instructor / Pydantic),
+- output guardrails completados,
+- y sin haber caído en `build_safe_fallback()` por agotar reintentos.
+
+`orchestrator.store(cache_ctx, payload, embedding=...)` en [`app/cache/orchestrator.py`](app/cache/orchestrator.py):
+
+| Capa | Cuándo escribe | Qué se persiste |
+|------|----------------|-----------------|
+| **Exacta v2** | `REDIS_URL` + no `skip_cache` + `is_result_cacheable(result)` | Mismo JSON que en lookup: `result`, `model`, `provider`, `usage`, `cost_usd`, etc. TTL: `CACHE_TTL_SECONDS`. |
+| **Semántica** | Además `SEMANTIC_CACHE_ENABLED=true` + índice activo | Mismo payload en `result_json` + vector del embedding. TTL: `SEMANTIC_CACHE_TTL_SECONDS` o `CACHE_TTL_SECONDS`. |
+
+**No se escribe** si:
+
+- `skip_cache=true` en la petición,
+- respuesta degradada (`build_safe_fallback`, fuera de alcance, fase «Sin estimar» con baja confianza, etc. — ver `is_result_cacheable()` en `app/cache/policies.py`),
+- o fallo al persistir (se registra `cache_set_failed` / `semantic_cache_store_failed` sin afectar la respuesta HTTP).
+
+El **embedding** calculado en el lookup semántico (miss) se reutiliza en `store` para no llamar dos veces a la API de embeddings.
+
+#### Variables de entorno de caché
+
+| Variable | Default | Descripción |
+|----------|---------|-------------|
+| `REDIS_URL` | vacío | Sin URL no hay orquestador ni lookups. |
+| `CACHE_TTL_SECONDS` | `86400` | TTL caché exacta. |
+| `SEMANTIC_CACHE_ENABLED` | `false` | Activa índice vectorial y lookup/store semántico. |
+| `SEMANTIC_CACHE_THRESHOLD` | `0.92` | Similitud mínima (1 − distancia coseno). |
+| `SEMANTIC_CACHE_LOG_ONLY` | `true` | Calibración: log de hits potenciales sin servirlos. |
+| `SEMANTIC_CACHE_TTL_SECONDS` | = `CACHE_TTL_SECONDS` | TTL entradas semánticas. |
+| `SEMANTIC_CACHE_MAX_RESULTS` | `3` | Top-K para logs de similitud. |
+| `SEMANTIC_EMBEDDING_PROVIDER` | `openai` | `openai` o `fake` (tests). |
+| `SEMANTIC_EMBEDDING_MODEL` | `text-embedding-3-small` | Modelo de embeddings. |
+| `SEMANTIC_EMBEDDING_DIMENSIONS` | `1536` | Debe coincidir con el modelo e índice. |
+
+#### Contrato API y observabilidad
+
+- La respuesta mantiene **`cache_hit: true/false`** (sin breaking change). En logs técnicos: `cache_source` = `exact` | `semantic` | `none` y, si aplica, `semantic_similarity`.
+- Eventos exactos: `cache_hit`, `cache_miss`, `cache_stored`, `cache_get_failed`, `cache_set_failed`.
+- Eventos semánticos: `semantic_cache_lookup`, `semantic_cache_hit`, `semantic_cache_miss`, `semantic_cache_store`, etc. (tabla de logging más arriba en este README).
+- Contadores in-memory: `get_cache_metrics()` en `app/cache/telemetry.py` (exportables a Prometheus).
 
 ### Interfaz Streamlit
 

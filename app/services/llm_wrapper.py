@@ -1,7 +1,7 @@
-"""Cliente LLM unificado con LiteLLM: Router (fallback), caché exacta y coste USD.
+"""Cliente LLM unificado con LiteLLM: Router (fallback) y coste USD.
 
-La orquestación de prompts CAG vive en ``app/prompts/``; este módulo se limita a
-``completion`` y Redis. Los precios USD por token están en ``llm_pricing.py``.
+La orquestación de prompts CAG vive en ``app/prompts/``; la caché en ``app/cache/``.
+Los precios USD por token están en ``llm_pricing.py``.
 """
 
 from __future__ import annotations
@@ -20,8 +20,10 @@ from app.guardrails.filters import build_safe_fallback
 from app.guardrails.output import run_output_guardrails
 from app.guardrails.telemetry import log_guardrail_event
 from app.schemas.estimation_common import SCHEMA_VERSION, DetailLevel, ProjectType
+from app.cache import EstimationCacheOrchestrator
+from app.cache.policies import is_result_cacheable
+from app.cache.types import CachedPayload, CacheContext
 from app.schemas.estimation_output import EstimationResult
-from app.services.llm_cache import EstimationCache
 from app.services.llm_pricing import (
     estimate_cost_usd,
     normalise_model_name,
@@ -66,15 +68,27 @@ def _cache_hit_metrics(cached: dict[str, Any], *, cache_key_model: str) -> dict[
 
 
 class LLMWrapper:
-    """LiteLLM + Router (fallback opcional), caché exacta y tracking de coste."""
+    """LiteLLM + Router (fallback opcional) y tracking de coste."""
 
     def __init__(
         self,
         settings: Settings,
-        cache: EstimationCache | None = None,
+        orchestrator: EstimationCacheOrchestrator | None = None,
+        *,
+        cache: Any = None,  # compat tests antiguos; ignorado si hay orchestrator
     ) -> None:
         self._settings = settings
-        self._cache = cache
+        self._orchestrator = orchestrator
+        if cache is not None and orchestrator is None:
+            from app.cache.exact import EstimationExactCache
+
+            if isinstance(cache, EstimationExactCache):
+                self._orchestrator = EstimationCacheOrchestrator(
+                    settings=settings,
+                    exact=cache,
+                    semantic=None,
+                    embedding_provider=None,
+                )
         self._timeout = int(settings.llm_timeout_seconds)
         self._num_retries = int(settings.llm_num_retries)
         self._temperature = float(settings.temperature)
@@ -198,28 +212,6 @@ class LLMWrapper:
         """Genera una estimación completa con LiteLLM y caché exacta."""
         max_t = max_tokens if max_tokens is not None else self._settings.max_tokens
         cache_key_model = model_override or self._primary_model
-        cache_key: str | None = None
-
-        if self._cache is not None and not skip_cache:
-            cache_key = EstimationCache.make_key(
-                system_prompt=system_prompt,
-                user_message=user_message,
-                model=cache_key_model,
-                max_tokens=max_t,
-                thinking_budget=thinking_budget,
-            )
-            cached = self._cache.get(cache_key)
-            if cached:
-                full = str(cached.get("estimation", ""))
-                log.info(
-                    "llm_generate_completed",
-                    log_category="technical",
-                    model=cache_key_model,
-                    cache_hit=True,
-                    latency_ms=0,
-                    chars=len(full),
-                )
-                return full, _cache_hit_metrics(cached, cache_key_model=cache_key_model)
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -270,24 +262,6 @@ class LLMWrapper:
         resolved_model = normalise_model_name(cache_key_model)
         gen_provider = provider_from_model(resolved_model)
         gen_cost = estimate_cost_usd(resolved_model, input_tokens, output_tokens)
-
-        if self._cache is not None and cache_key is not None and not skip_cache:
-            self._cache.set(
-                cache_key,
-                {
-                    "estimation": rendered,
-                    "model": resolved_model,
-                    "provider": gen_provider,
-                    "finish_reason": finish_reason,
-                    "usage": {
-                        "input_tokens": input_tokens,
-                        "output_tokens": output_tokens,
-                        "total_tokens": total_tokens,
-                    },
-                    "latency_ms": latency_ms,
-                    "cost_usd": gen_cost,
-                },
-            )
 
         return rendered, {
             "usage": {
@@ -425,39 +399,12 @@ class LLMWrapper:
         thinking_budget: int | None = None,
         skip_cache: bool = False,
         max_validation_retries: int = 2,
+        cache_context: CacheContext | None = None,
+        cache_embedding: list[float] | None = None,
     ) -> tuple[EstimationResult, dict[str, Any]]:
         """Genera ``EstimationResult`` validado vía Instructor + LiteLLM."""
         max_t = max_tokens if max_tokens is not None else self._settings.max_tokens
         cache_key_model = model_override or self._primary_model
-        cache_key: str | None = None
-
-        if self._cache is not None and not skip_cache:
-            cache_key = EstimationCache.make_key(
-                system_prompt=system_prompt,
-                user_message=user_message,
-                model=cache_key_model,
-                max_tokens=max_t,
-                thinking_budget=thinking_budget,
-                schema_version=CACHE_SCHEMA_VERSION,
-            )
-            cached = self._cache.get(cache_key)
-            if cached and isinstance(cached.get("result"), dict):
-                result = EstimationResult.model_validate(cached["result"])
-                result = self._apply_output_guardrails(
-                    result,
-                    detail_level=detail_level,
-                    project_type=project_type,
-                    source_description=source_description,
-                )
-                log.info(
-                    "llm_structured_completed",
-                    log_category="technical",
-                    model=cache_key_model,
-                    cache_hit=True,
-                    phase_count=len(result.phases),
-                    reasoning_chars=len(result.reasoning),
-                )
-                return result, _cache_hit_metrics(cached, cache_key_model=cache_key_model)
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -473,6 +420,7 @@ class LLMWrapper:
         max_out_retries = self._settings.guardrails_output_max_retries
         result: EstimationResult | None = None
         raw: Any = None
+        used_safe_fallback = False
         try:
             for attempt in range(max_out_retries + 1):
                 result, raw = self._call_structured(
@@ -504,6 +452,7 @@ class LLMWrapper:
                             detail_level=detail_level,
                             reason=retry_exc.guardrail_name,
                         )
+                        used_safe_fallback = True
                         break
                     log_guardrail_event(
                         "llm_retry_triggered",
@@ -526,6 +475,7 @@ class LLMWrapper:
 
         latency_ms = int((time.perf_counter() - t0) * 1000)
         metrics = self._structured_metrics(raw, cache_key_model=cache_key_model, cache_hit=False)
+        metrics["cache_source"] = "none"
         log.info(
             "llm_structured_completed",
             log_category="technical",
@@ -537,18 +487,26 @@ class LLMWrapper:
             confidence_pct=result.confidence_pct,
         )
 
-        if self._cache is not None and cache_key is not None and not skip_cache:
-            self._cache.set(
-                cache_key,
-                {
-                    "result": result.model_dump(mode="json"),
-                    "model": metrics["model"],
-                    "provider": metrics["provider"],
-                    "finish_reason": metrics["finish_reason"],
-                    "usage": metrics["usage"],
-                    "latency_ms": latency_ms,
-                    "cost_usd": metrics["cost_usd"],
-                },
+        if (
+            self._orchestrator is not None
+            and cache_context is not None
+            and not skip_cache
+        ):
+            payload = CachedPayload(
+                result=result,
+                model=str(metrics["model"]),
+                provider=str(metrics["provider"]),
+                finish_reason=str(metrics["finish_reason"]),
+                usage=dict(metrics["usage"]),
+                cost_usd=float(metrics["cost_usd"]),
+                latency_ms=latency_ms,
+            )
+            cacheable = is_result_cacheable(result) and not used_safe_fallback
+            self._orchestrator.store(
+                cache_context,
+                payload,
+                embedding=cache_embedding,
+                cacheable=cacheable,
             )
 
         return result, metrics

@@ -32,6 +32,18 @@ class Settings(BaseSettings):
     redis_url: str | None = Field(default=None)
     cache_ttl_seconds: int = Field(default=86400, ge=60, le=604800)
 
+    # Caché semántica (Redis Stack + embeddings; requiere RediSearch)
+    semantic_cache_enabled: bool = Field(default=False)
+    semantic_cache_threshold: float = Field(default=0.92, ge=0.0, le=1.0)
+    semantic_cache_log_only: bool = Field(default=True)
+    semantic_cache_ttl_seconds: int | None = Field(default=None, ge=60, le=604800)
+    semantic_cache_max_results: int = Field(default=3, ge=1, le=20)
+    semantic_cache_index_name: str = Field(default="estimations_v1")
+    semantic_cache_key_prefix: str = Field(default="estimation:semantic:v1")
+    semantic_embedding_provider: str = Field(default="openai")
+    semantic_embedding_model: str = Field(default="text-embedding-3-small")
+    semantic_embedding_dimensions: int = Field(default=1536, ge=1, le=4096)
+
     # Guardrails (defense-in-depth)
     guardrails_enabled: bool = Field(default=True)
     guardrails_moderation_enabled: bool = Field(default=True)
@@ -92,6 +104,11 @@ class Settings(BaseSettings):
                 raise ValueError(f"Proveedor '{provider}' sin modelos configurados.")
             normalized[provider.strip().lower()] = cleaned_models
         return normalized
+
+    def resolved_semantic_cache_ttl(self) -> int:
+        if self.semantic_cache_ttl_seconds is not None:
+            return int(self.semantic_cache_ttl_seconds)
+        return int(self.cache_ttl_seconds)
 
     @model_validator(mode="after")
     def validate_llm_settings(self) -> "Settings":

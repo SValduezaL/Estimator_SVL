@@ -8,16 +8,19 @@ import pytest
 from fakeredis import FakeRedis
 from fastapi.testclient import TestClient
 
+from app.cache import build_cache_context, make_exact_key
+from app.cache.exact import EstimationExactCache
+from app.cache.orchestrator import EstimationCacheOrchestrator
+from app.cache.types import CachedPayload
 from app.config import Settings, get_settings
-from app.dependencies import get_estimation_cache
+from app.dependencies import get_cache_orchestrator
 from app.main import app
-from app.services.llm_wrapper import CACHE_SCHEMA_VERSION
+from app.prompts.registry import DEFAULT_ESTIMATION_BUNDLE
 from app.schemas.estimation_request import EstimationRequest
-from app.services.llm_cache import EstimationCache
-from app.services.llm_service import build_estimation_cache_inputs
+from app.services.llm_wrapper import CACHE_SCHEMA_VERSION
 
 from tests.conftest import _STUB_RESULT
-from tests.test_estimate_endpoint import ESTIMATE_PAYLOAD, TRANSCRIPTION
+from tests.test_estimate_endpoint import ESTIMATE_PAYLOAD
 
 
 @pytest.fixture
@@ -31,6 +34,7 @@ def test_settings() -> Settings:
             "anthropic": ["claude-haiku-4-5"],
         },
         guardrails_enabled=False,
+        redis_url="redis://fake",
     )
 
 
@@ -39,9 +43,15 @@ def client_with_redis_cache(
     test_settings: Settings,
     litellm_stub_log: list[dict],
 ) -> Iterator[TestClient]:
-    cache = EstimationCache(FakeRedis(decode_responses=True), ttl=3600)
+    exact = EstimationExactCache(FakeRedis(decode_responses=True), ttl=3600)
+    orchestrator = EstimationCacheOrchestrator(
+        settings=test_settings,
+        exact=exact,
+        semantic=None,
+        embedding_provider=None,
+    )
     app.dependency_overrides[get_settings] = lambda: test_settings
-    app.dependency_overrides[get_estimation_cache] = lambda: cache
+    app.dependency_overrides[get_cache_orchestrator] = lambda: orchestrator
     yield TestClient(app)
     app.dependency_overrides.clear()
 
@@ -92,35 +102,35 @@ def test_cache_hit_uses_stored_model_not_configured_primary(
 ) -> None:
     """Regresión: no mezclar LLM_MODEL configurado con proveedor del fallback en caché."""
     fake_redis = FakeRedis(decode_responses=True)
-    cache = EstimationCache(fake_redis, ttl=3600)
+    exact = EstimationExactCache(fake_redis, ttl=3600)
+    orchestrator = EstimationCacheOrchestrator(
+        settings=test_settings,
+        exact=exact,
+        semantic=None,
+        embedding_provider=None,
+    )
     app.dependency_overrides[get_settings] = lambda: test_settings
-    app.dependency_overrides[get_estimation_cache] = lambda: cache
+    app.dependency_overrides[get_cache_orchestrator] = lambda: orchestrator
 
     request = EstimationRequest(**ESTIMATE_PAYLOAD)
-    system_prompt, user_message, model_used, max_tokens, thinking_budget, _ = (
-        build_estimation_cache_inputs(settings=test_settings, request=request)
-    )
-    assert model_used == "gpt-4o-mini"
-
-    cache_key = EstimationCache.make_key(
-        system_prompt=system_prompt,
-        user_message=user_message,
-        model=model_used,
-        max_tokens=max_tokens,
-        thinking_budget=thinking_budget,
+    ctx = build_cache_context(
+        request=request,
+        bundle=DEFAULT_ESTIMATION_BUNDLE,
         schema_version=CACHE_SCHEMA_VERSION,
+        model=test_settings.llm_model,
+        max_tokens=test_settings.max_tokens,
+        thinking_budget=None,
     )
-    cache.set(
-        cache_key,
-        {
-            "result": _STUB_RESULT.model_dump(mode="json"),
-            "model": "claude-haiku-4-5",
-            "provider": "anthropic",
-            "finish_reason": "stop",
-            "usage": {"input_tokens": 100, "output_tokens": 50, "total_tokens": 150},
-            "cost_usd": 0.001,
-        },
+    key = make_exact_key(ctx)
+    payload = CachedPayload(
+        result=_STUB_RESULT,
+        model="claude-haiku-4-5",
+        provider="anthropic",
+        finish_reason="stop",
+        usage={"input_tokens": 100, "output_tokens": 50, "total_tokens": 150},
+        cost_usd=0.001,
     )
+    exact.redis.set(key, __import__("json").dumps(payload.to_redis_dict()))
 
     try:
         with TestClient(app) as client:
