@@ -1,0 +1,27 @@
+{
+  "summary": "Herramienta de asignación de turnos para almacén con reglas sindicales básicas.",
+  "confidence_pct": 65,
+  "phases": [
+    {
+      "name": "Modelo",
+      "deliverable": "Reglas de turnos y validaciones",
+      "hours": 36,
+      "cost_eur": 2160
+    },
+    {
+      "name": "UI planificación",
+      "deliverable": "Calendario drag-and-drop y conflictos",
+      "hours": 40,
+      "cost_eur": 2400
+    },
+    {
+      "name": "Despliegue",
+      "deliverable": "SSO corporativo y formación",
+      "hours": 12,
+      "cost_eur": 720
+    }
+  ],
+  "total_duration_weeks": 9,
+  "total_cost_eur": 5280,
+  "reasoning": "## Complejidad de reglas\nLa fase modelo absorbe incertidumbre legal; sin ella el UI sería retrabajo.\n\n**Drag-and-drop** justifica frontend dedicado frente a grids simples.\n\n**9 semanas** asumen validación con RRHH antes del go-live."
+}

@@ -1,0 +1,27 @@
+{
+  "summary": "Portal de partners con SSO SAML, API de leads y dashboard de conversión.",
+  "confidence_pct": 68,
+  "phases": [
+    {
+      "name": "Identidad",
+      "deliverable": "SSO SAML y provisión de usuarios partner",
+      "hours": 28,
+      "cost_eur": 1680
+    },
+    {
+      "name": "Integraciones",
+      "deliverable": "API leads y webhooks hacia CRM",
+      "hours": 32,
+      "cost_eur": 1920
+    },
+    {
+      "name": "Analytics",
+      "deliverable": "Dashboard de embudo y export CSV",
+      "hours": 24,
+      "cost_eur": 1440
+    }
+  ],
+  "total_duration_weeks": 8,
+  "total_cost_eur": 5040,
+  "reasoning": "## Decisiones de alcance\nDos integraciones externas justifican una fase dedicada frente a mezclarlas con el dashboard.\n\n**SSO SAML** reduce fricción B2B frente a OAuth social; el esfuerzo extra está en metadatos y rotación de certificados.\n\n**8 semanas** incluyen buffer para pruebas de integración con el CRM del cliente."
+}

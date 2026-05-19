@@ -14,11 +14,18 @@ import structlog
 from litellm import Router
 
 from app.config import Settings
+from app.schemas.estimation_common import SCHEMA_VERSION, DetailLevel
+from app.schemas.estimation_output import EstimationResult
 from app.services.llm_cache import EstimationCache
 from app.services.llm_pricing import (
     estimate_cost_usd,
     normalise_model_name,
     provider_from_model,
+)
+from app.services.structured_llm import (
+    complete_estimation,
+    extract_metrics,
+    instructor_client_for_completion,
 )
 
 log = structlog.get_logger(__name__)
@@ -92,6 +99,12 @@ class LLMWrapper:
         if fallbacks:
             router_kw["fallbacks"] = fallbacks
         self.router = Router(**router_kw)
+        self._instructor_direct = instructor_client_for_completion(litellm.completion)
+
+        def _routed_completion(**kwargs: Any) -> Any:
+            return self.router.completion(model="estimator", **kwargs)
+
+        self._instructor_routed = instructor_client_for_completion(_routed_completion)
 
     def _api_key_for_model(self, model_id: str) -> str | None:
         prov = provider_from_model(model_id)
@@ -277,3 +290,217 @@ class LLMWrapper:
             "provider": gen_provider,
             "cost_usd": gen_cost,
         }
+
+    def _structured_metrics(
+        self,
+        raw: Any,
+        *,
+        cache_key_model: str,
+        cache_hit: bool,
+    ) -> dict[str, Any]:
+        meta = extract_metrics(raw)
+        resolved_model = normalise_model_name(meta.get("model") or cache_key_model)
+        usage = meta["usage"]
+        gen_provider = provider_from_model(resolved_model)
+        gen_cost = estimate_cost_usd(
+            resolved_model,
+            int(usage["input_tokens"]),
+            int(usage["output_tokens"]),
+        )
+        return {
+            "usage": usage,
+            "usage_available": bool(meta["usage_available"]),
+            "cache_hit": cache_hit,
+            "finish_reason": str(meta["finish_reason"]),
+            "provider": gen_provider,
+            "cost_usd": gen_cost,
+            "model": resolved_model,
+        }
+
+    def _call_structured(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        model_id: str,
+        model_override: str | None,
+        max_tokens: int,
+        thinking_budget: int | None,
+        detail_level: DetailLevel,
+        max_validation_retries: int = 2,
+    ) -> tuple[EstimationResult, Any]:
+        api_key = self._api_key_for_model(model_id)
+        if not api_key:
+            raise ValueError(f"No hay API key para el modelo {model_id!r}.")
+
+        extra = self._build_call_kwargs(
+            messages=messages,
+            max_tokens=max_tokens,
+            thinking_budget=thinking_budget,
+            model_override=model_override,
+        )
+        extra.pop("messages", None)
+        client = self._instructor_direct if model_override else self._instructor_routed
+
+        try:
+            return complete_estimation(
+                client=client,
+                messages=messages,
+                model=model_id if model_override else "estimator",
+                api_key=api_key,
+                max_tokens=max_tokens,
+                temperature=self._temperature,
+                timeout=self._timeout,
+                num_retries=self._num_retries,
+                max_validation_retries=max_validation_retries,
+                detail_level=detail_level,
+                extra_kwargs=extra,
+            )
+        except Exception:
+            if not model_override and self._fallback_model:
+                fb_key = self._api_key_for_model(self._fallback_model)
+                if fb_key:
+                    log.warning(
+                        "structured_fallback_model",
+                        log_category="technical",
+                        error_recoverable=True,
+                        fallback_model=self._fallback_model,
+                    )
+                    fb_extra = self._build_call_kwargs(
+                        messages=messages,
+                        max_tokens=max_tokens,
+                        thinking_budget=thinking_budget,
+                        model_override=self._fallback_model,
+                    )
+                    fb_extra.pop("messages", None)
+                    return complete_estimation(
+                        client=self._instructor_direct,
+                        messages=messages,
+                        model=self._fallback_model,
+                        api_key=fb_key,
+                        max_tokens=max_tokens,
+                        temperature=self._temperature,
+                        timeout=self._timeout,
+                        num_retries=self._num_retries,
+                        max_validation_retries=max_validation_retries,
+                        detail_level=detail_level,
+                        extra_kwargs=fb_extra,
+                    )
+            raise
+
+    def generate_structured(
+        self,
+        *,
+        system_prompt: str,
+        user_message: str,
+        detail_level: DetailLevel,
+        model_override: str | None = None,
+        max_tokens: int | None = None,
+        thinking_budget: int | None = None,
+        skip_cache: bool = False,
+        max_validation_retries: int = 2,
+    ) -> tuple[EstimationResult, dict[str, Any]]:
+        """Genera ``EstimationResult`` validado vía Instructor + LiteLLM."""
+        max_t = max_tokens if max_tokens is not None else self._settings.max_tokens
+        cache_key_model = model_override or self._primary_model
+        cache_key: str | None = None
+
+        if self._cache is not None and not skip_cache:
+            cache_key = EstimationCache.make_key(
+                system_prompt=system_prompt,
+                user_message=user_message,
+                model=cache_key_model,
+                max_tokens=max_t,
+                thinking_budget=thinking_budget,
+                schema_version=SCHEMA_VERSION,
+            )
+            cached = self._cache.get(cache_key)
+            if cached and isinstance(cached.get("result"), dict):
+                result = EstimationResult.model_validate(cached["result"])
+                log.info(
+                    "llm_structured_completed",
+                    log_category="technical",
+                    model=cache_key_model,
+                    cache_hit=True,
+                    phase_count=len(result.phases),
+                    reasoning_chars=len(result.reasoning),
+                )
+                usage = cached.get(
+                    "usage",
+                    {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+                )
+                prov = str(
+                    cached.get("provider")
+                    or provider_from_model(str(cached.get("model", cache_key_model)))
+                )
+                return result, {
+                    "usage": dict(usage),
+                    "usage_available": True,
+                    "finish_reason": str(cached.get("finish_reason", "stop")),
+                    "cache_hit": True,
+                    "provider": prov,
+                    "cost_usd": float(cached.get("cost_usd", 0.0)),
+                }
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ]
+        log.info(
+            "llm_structured_started",
+            log_category="technical",
+            model=cache_key_model,
+            detail_level=detail_level.value,
+        )
+        t0 = time.perf_counter()
+        try:
+            result, raw = self._call_structured(
+                messages=messages,
+                model_id=cache_key_model,
+                model_override=model_override,
+                max_tokens=max_t,
+                thinking_budget=thinking_budget,
+                detail_level=detail_level,
+                max_validation_retries=max_validation_retries,
+            )
+        except Exception as exc:
+            latency_ms = int((time.perf_counter() - t0) * 1000)
+            log.error(
+                "llm_structured_failed",
+                log_category="technical",
+                error_recoverable=False,
+                error_type=type(exc).__name__,
+                error_message=str(exc),
+                latency_ms=latency_ms,
+                model=cache_key_model,
+                exc_info=True,
+            )
+            raise
+
+        latency_ms = int((time.perf_counter() - t0) * 1000)
+        metrics = self._structured_metrics(raw, cache_key_model=cache_key_model, cache_hit=False)
+        log.info(
+            "llm_structured_completed",
+            log_category="technical",
+            latency_ms=latency_ms,
+            model=metrics["model"],
+            cache_hit=False,
+            phase_count=len(result.phases),
+            reasoning_chars=len(result.reasoning),
+            confidence_pct=result.confidence_pct,
+        )
+
+        if self._cache is not None and cache_key is not None and not skip_cache:
+            self._cache.set(
+                cache_key,
+                {
+                    "result": result.model_dump(mode="json"),
+                    "model": metrics["model"],
+                    "provider": metrics["provider"],
+                    "finish_reason": metrics["finish_reason"],
+                    "usage": metrics["usage"],
+                    "latency_ms": latency_ms,
+                    "cost_usd": metrics["cost_usd"],
+                },
+            )
+
+        return result, metrics

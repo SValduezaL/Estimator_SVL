@@ -1,0 +1,27 @@
+{
+  "summary": "Superapp interna de operaciones con módulos plug-in y autenticación biométrica.",
+  "confidence_pct": 62,
+  "phases": [
+    {
+      "name": "Plataforma",
+      "deliverable": "Shell app y SDK de módulos",
+      "hours": 44,
+      "cost_eur": 2640
+    },
+    {
+      "name": "Seguridad",
+      "deliverable": "Biometría y gestión de sesión",
+      "hours": 28,
+      "cost_eur": 1680
+    },
+    {
+      "name": "Módulos MVP",
+      "deliverable": "Dos módulos operativos iniciales",
+      "hours": 36,
+      "cost_eur": 2160
+    }
+  ],
+  "total_duration_weeks": 12,
+  "total_cost_eur": 6480,
+  "reasoning": "## Por qué arquitectura modular\nEl cliente prevé más módulos; el shell amortiza futuras entregas frente a apps monolíticas repetidas.\n\n**Biometría** en fase propia por variabilidad Android/iOS.\n\n**12 semanas** incluyen diseño de contrato entre equipos internos."
+}

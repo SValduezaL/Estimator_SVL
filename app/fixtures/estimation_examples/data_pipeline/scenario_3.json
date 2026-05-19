@@ -1,0 +1,27 @@
+{
+  "summary": "Plataforma de features para ML con store online y pipelines de entrenamiento.",
+  "confidence_pct": 60,
+  "phases": [
+    {
+      "name": "Feature store",
+      "deliverable": "Online/offline store y API de serving",
+      "hours": 48,
+      "cost_eur": 2880
+    },
+    {
+      "name": "Training",
+      "deliverable": "Pipelines reproducibles y versionado modelos",
+      "hours": 40,
+      "cost_eur": 2400
+    },
+    {
+      "name": "MLOps",
+      "deliverable": "Monitoreo drift y despliegue canario",
+      "hours": 32,
+      "cost_eur": 1920
+    }
+  ],
+  "total_duration_weeks": 14,
+  "total_cost_eur": 7200,
+  "reasoning": "## Por qué feature store primero\nSin serving consistente los pipelines de entrenamiento no cerran el ciclo de valor.\n\n**Confianza moderada** por dependencia de calidad de datos históricos no auditados aún.\n\n**14 semanas** con ML engineer + plataforma data; MLOps al final para no bloquear experimentación."
+}

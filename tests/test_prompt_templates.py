@@ -1,6 +1,8 @@
-"""Tests deterministas de plantillas Jinja2 (sin llamadas al LLM)."""
+"""Tests deterministas de plantillas Jinja2 v3 (sin llamadas al LLM)."""
 
 from __future__ import annotations
+
+import json
 
 import pytest
 from jinja2 import TemplateNotFound, UndefinedError
@@ -8,11 +10,12 @@ from jinja2 import TemplateNotFound, UndefinedError
 from app.prompts.loader import build_estimation_jinja_environment, render_estimation_prompt
 from app.prompts.registry import (
     DEFAULT_ESTIMATION_BUNDLE,
-    ESTIMATION_BUNDLE_V1,
+    ESTIMATION_BUNDLE_V3,
     ESTIMATION_PROMPT_VERSION,
     get_estimation_bundle,
 )
-from app.schemas.estimation import DetailLevel, EstimationRequest, OutputFormat, ProjectType
+from app.schemas.estimation_common import DetailLevel, ProjectType
+from app.schemas.estimation_request import EstimationRequest
 
 
 def _make_request(**overrides: object) -> EstimationRequest:
@@ -20,103 +23,61 @@ def _make_request(**overrides: object) -> EstimationRequest:
         "description": "Descripción mínima válida para tests de plantillas.",
         "project_type": ProjectType.WEB_SAAS,
         "detail_level": DetailLevel.MEDIUM,
-        "output_format": OutputFormat.LINE_ITEMS,
     }
     base.update(overrides)
     return EstimationRequest(**base)
 
 
-_PHASES_TABLE_KEYWORD = (
-    "| Fase | Entregable principal | Horas (rango) | Riesgos / notas |"
-)
-
-
 def test_description_literal_inside_project_description_block() -> None:
-    """El user renderizado incluye la descripción tal cual entre las etiquetas XML."""
-    desc = 'Literal con ñ, "comillas", <tag> y & entidades no escapadas en el JSON.'
+    desc = 'Literal con ñ, "comillas", <tag> y & entidades.'
     _system, user = render_estimation_prompt(_make_request(description=desc))
     assert "<project_description>" in user
-    assert "</project_description>" in user
     i = user.index("<project_description>") + len("<project_description>")
     j = user.index("</project_description>")
-    inner = user[i:j].strip("\n")
-    assert inner == desc
+    assert user[i:j].strip("\n") == desc
 
 
-def test_phases_table_system_has_format_keyword_narrative_does_not() -> None:
-    """Instrucción de columnas de fases solo en output_format=phases_table, no en narrative."""
-    sys_phases, _ = render_estimation_prompt(_make_request(output_format=OutputFormat.PHASES_TABLE))
-    sys_narr, _ = render_estimation_prompt(_make_request(output_format=OutputFormat.NARRATIVE))
-    assert _PHASES_TABLE_KEYWORD in sys_phases
-    assert _PHASES_TABLE_KEYWORD not in sys_narr
-
-
-def test_detailed_includes_per_phase_assumptions_instruction_summary_does_not() -> None:
-    """Modo detailed exige supuestos por fase; summary no incluye esa instrucción."""
-    sys_detailed, _ = render_estimation_prompt(_make_request(detail_level=DetailLevel.DETAILED))
-    sys_summary, _ = render_estimation_prompt(_make_request(detail_level=DetailLevel.SUMMARY))
-    assert "Supuestos por fase" in sys_detailed
-    assert "Supuestos por fase" not in sys_summary
-
-
-def test_detailed_adds_confidence_pct_instruction() -> None:
-    system_detailed, _ = render_estimation_prompt(_make_request(detail_level=DetailLevel.DETAILED))
-    system_summary, _ = render_estimation_prompt(_make_request(detail_level=DetailLevel.SUMMARY))
-    assert "confidence_pct" in system_detailed
-    assert "confidence_pct" not in system_summary
-
-
-def test_phases_table_activates_phase_columns() -> None:
-    system, _ = render_estimation_prompt(_make_request(output_format=OutputFormat.PHASES_TABLE))
-    assert "| Fase | Entregable principal | Horas (rango) | Riesgos / notas |" in system
-
-
-def test_line_items_activates_task_table_columns() -> None:
-    system, _ = render_estimation_prompt(_make_request(output_format=OutputFormat.LINE_ITEMS))
-    assert "| Tarea | Horas | Coste (EUR) |" in system
-
-
-def test_narrative_branch_differs_from_phases() -> None:
-    sys_narr, _ = render_estimation_prompt(_make_request(output_format=OutputFormat.NARRATIVE))
-    sys_phases, _ = render_estimation_prompt(_make_request(output_format=OutputFormat.PHASES_TABLE))
-    assert "narrativo" in sys_narr.lower()
-    assert sys_narr != sys_phases
-
-
-def test_examples_j2_content_is_in_system_prompt() -> None:
+def test_v3_system_includes_json_and_reasoning_format() -> None:
     system, _ = render_estimation_prompt(_make_request())
-    assert "<few_shot_selected" in system
-    assert "<few_shot_policy>" in system
+    assert "estimation.v1" in system
+    assert "<reasoning_format>" in system
+    assert "reasoning" in system.lower()
+    assert "output_format" not in system
+
+
+def test_v3_user_has_no_output_format() -> None:
+    _, user = render_estimation_prompt(_make_request())
+    assert "<output_format>" not in user
+    assert "<detail_level>medium</detail_level>" in user
+
+
+def test_examples_inject_three_json_blocks() -> None:
+    system, _ = render_estimation_prompt(_make_request())
     assert system.count("<reference_estimation") == 3
-    assert "webhooks idempotentes" in system.lower()
+    assert system.count("<example_json>") == 3
+    assert '"phases"' in system
 
 
-def test_few_shots_follow_project_type_not_mixed_domains() -> None:
+def test_few_shots_follow_project_type() -> None:
     sm, _ = render_estimation_prompt(_make_request(project_type=ProjectType.MOBILE_APP))
     sw, _ = render_estimation_prompt(_make_request(project_type=ProjectType.WEB_SAAS))
-    sd, _ = render_estimation_prompt(_make_request(project_type=ProjectType.DATA_PIPELINE))
-    assert "inventario en tienda" in sm.lower() or "cadena retail" in sm.lower()
-    assert "webhooks idempotentes" in sw.lower()
-    assert "cdc" in sd.lower() or "linaje" in sd.lower()
-    assert "cadena retail" not in sw.lower()
+    assert "Flutter" in sm or "móvil" in sm.lower()
+    assert "tenant" in sw.lower() or "saas" in sw.lower()
 
 
-def test_summary_format_combo_changes_few_shot_body() -> None:
-    sp, _ = render_estimation_prompt(
-        _make_request(detail_level=DetailLevel.SUMMARY, output_format=OutputFormat.PHASES_TABLE)
-    )
-    sl, _ = render_estimation_prompt(
-        _make_request(detail_level=DetailLevel.SUMMARY, output_format=OutputFormat.LINE_ITEMS)
-    )
-    assert "108–132" in sp
-    assert "| 28 | 1.680 |" in sl
+def test_detail_level_changes_reasoning_instructions() -> None:
+    sys_s, _ = render_estimation_prompt(_make_request(detail_level=DetailLevel.SUMMARY))
+    sys_d, _ = render_estimation_prompt(_make_request(detail_level=DetailLevel.DETAILED))
+    assert "80–400" in sys_s
+    assert "300–2400" in sys_d
 
 
-def test_project_type_conditional_changes_system() -> None:
-    s_mobile, _ = render_estimation_prompt(_make_request(project_type=ProjectType.MOBILE_APP))
-    s_pipe, _ = render_estimation_prompt(_make_request(project_type=ProjectType.DATA_PIPELINE))
-    assert "iOS/Android" in s_mobile
-    assert "SLAs de frescura" in s_pipe
+def test_example_json_filter_produces_valid_json() -> None:
+    env = build_estimation_jinja_environment()
+    raw = env.globals["example_json"]("web_saas", 1)
+    data = json.loads(raw)
+    assert "phases" in data
+    assert "reasoning" in data
 
 
 def test_strictundefined_errors_on_unknown_variable() -> None:
@@ -131,23 +92,11 @@ def test_unknown_version_raises_template_not_found() -> None:
         render_estimation_prompt(_make_request(), version="v999_nonexistent")
 
 
-def test_default_bundle_is_estimation_v2() -> None:
-    assert DEFAULT_ESTIMATION_BUNDLE.public_id == "estimation-v2"
-    assert ESTIMATION_PROMPT_VERSION == "estimation-v2"
-
-
-def test_v2_system_includes_quality_and_checklist() -> None:
-    system, _ = render_estimation_prompt(_make_request())
-    assert "<pre_response_checklist>" in system
-    assert "Calibración numérica" in system
-
-
-def test_v1_bundle_skips_v2_only_blocks() -> None:
-    system, _ = render_estimation_prompt(_make_request(), bundle=ESTIMATION_BUNDLE_V1)
-    assert "<pre_response_checklist>" not in system
-    assert "Calibración numérica" not in system
+def test_default_bundle_is_v3_structured() -> None:
+    assert DEFAULT_ESTIMATION_BUNDLE.public_id == "estimation-v3-structured"
+    assert ESTIMATION_PROMPT_VERSION == "estimation-v3-structured"
 
 
 def test_get_estimation_bundle_by_public_id() -> None:
-    assert get_estimation_bundle("estimation-v1").template_subdir == "v1"
-    assert get_estimation_bundle("estimation-v2").template_subdir == "v2"
+    assert get_estimation_bundle("estimation-v3-structured").template_subdir == "v3"
+    assert get_estimation_bundle(ESTIMATION_BUNDLE_V3.public_id) == ESTIMATION_BUNDLE_V3

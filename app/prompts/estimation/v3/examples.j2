@@ -1,0 +1,12 @@
+{# Tres few-shots JSON canónicos (fixtures); sin ramas por detail_level. #}
+<few_shot_selected project_type="{{ project_type }}">
+<reference_estimation id="1" project_domain="{{ project_type }}">
+<example_json>{{ example_json(project_type, 1) }}</example_json>
+</reference_estimation>
+<reference_estimation id="2" project_domain="{{ project_type }}">
+<example_json>{{ example_json(project_type, 2) }}</example_json>
+</reference_estimation>
+<reference_estimation id="3" project_domain="{{ project_type }}">
+<example_json>{{ example_json(project_type, 3) }}</example_json>
+</reference_estimation>
+</few_shot_selected>

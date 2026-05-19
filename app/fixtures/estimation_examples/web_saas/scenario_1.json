@@ -1,0 +1,29 @@
+{
+  "summary": "MVP B2B de facturación recurrente multi-tenant con planes, pasarela y webhooks idempotentes.",
+  "confidence_pct": 72,
+  "phases": [
+    {
+      "name": "Fundaciones",
+      "deliverable": "Auth, RBAC y modelo tenant/planes",
+      "hours": 22,
+      "cost_eur": 1320,
+      "risks_notes": "Aislamiento de datos por tenant"
+    },
+    {
+      "name": "Cobros",
+      "deliverable": "Integración pasarela y webhooks idempotentes",
+      "hours": 30,
+      "cost_eur": 1800,
+      "risks_notes": "Reintentos y firma HMAC"
+    },
+    {
+      "name": "Producto",
+      "deliverable": "API OpenAPI y panel React de onboarding",
+      "hours": 38,
+      "cost_eur": 2280
+    }
+  ],
+  "total_duration_weeks": 7,
+  "total_cost_eur": 5400,
+  "reasoning": "## Por qué tres fases\nSeparé fundaciones, cobros y producto para acotar el riesgo de la pasarela antes del panel.\n\n**Stack:** FastAPI, PostgreSQL y React por time-to-market y contratación habitual en SaaS B2B.\n\n**Coste y plazo:** 90 h repartidas en 7 semanas con full-stack senior y frontend mid; el coste cuadra con tarifa implícita de 60 EUR/h."
+}

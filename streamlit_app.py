@@ -6,17 +6,16 @@ import os
 from typing import Any
 
 import httpx
+import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 
 from app.prompts.loader import render_estimation_prompt
 from app.schemas.estimation import (
     DETAIL_LEVEL_LABELS,
-    OUTPUT_FORMAT_LABELS,
     PROJECT_TYPE_LABELS,
     DetailLevel,
     EstimationRequest,
-    OutputFormat,
     ProjectType,
 )
 
@@ -40,7 +39,6 @@ _preview_request = EstimationRequest(
     description="Texto de ejemplo para la vista previa del prompt (mín. 20 caracteres).",
     project_type=ProjectType.WEB_SAAS,
     detail_level=DetailLevel.MEDIUM,
-    output_format=OutputFormat.LINE_ITEMS,
 )
 _system_prompt, _user_prompt_preview = render_estimation_prompt(_preview_request)
 
@@ -79,13 +77,36 @@ def _store_metrics_payload(data: dict[str, Any]) -> None:
     }
 
 
+def _render_estimation_result(result: dict[str, Any]) -> None:
+    st.markdown(f"**{result.get('summary', '')}**")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.metric("Confianza", f"{result.get('confidence_pct', 0)} %")
+    with c2:
+        st.metric("Duración", f"{result.get('total_duration_weeks', 0)} sem")
+    with c3:
+        st.metric("Coste total", f"{int(result.get('total_cost_eur', 0)):,} EUR".replace(",", "."))
+
+    phases = result.get("phases") or []
+    if phases:
+        st.subheader("Fases")
+        st.dataframe(
+            pd.DataFrame(phases),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    with st.expander("Justificación (reasoning)", expanded=True):
+        st.markdown(str(result.get("reasoning", "")))
+
+
 if "last_metrics" not in st.session_state:
     st.session_state.last_metrics = None
 if "last_metrics_raw" not in st.session_state:
     st.session_state.last_metrics_raw = None
 
 st.title("Estimador de software (CAG)")
-st.caption("Formulario estructurado; la estimación llega como respuesta JSON completa.")
+st.caption("Formulario estructurado; la API devuelve un ``EstimationResult`` validado.")
 
 with st.form("estimation_form"):
     description = st.text_area(
@@ -93,7 +114,7 @@ with st.form("estimation_form"):
         height=180,
         placeholder="Describe alcance, integraciones conocidas, plazos y restricciones (mín. 20 caracteres).",
     )
-    c1, c2, c3 = st.columns(3)
+    c1, c2 = st.columns(2)
     with c1:
         project_type = st.selectbox(
             "Tipo de proyecto",
@@ -105,12 +126,6 @@ with st.form("estimation_form"):
             "Nivel de detalle",
             options=list(DetailLevel),
             format_func=lambda d: DETAIL_LEVEL_LABELS[d],
-        )
-    with c3:
-        output_format = st.selectbox(
-            "Formato de salida",
-            options=list(OutputFormat),
-            format_func=lambda o: OUTPUT_FORMAT_LABELS[o],
         )
     submitted = st.form_submit_button("Generar estimación")
 
@@ -126,7 +141,6 @@ if submitted:
                 description=desc,
                 project_type=project_type,
                 detail_level=detail_level,
-                output_format=output_format,
             )
         except Exception as exc:
             st.error(f"Datos no válidos: {exc}")
@@ -137,7 +151,11 @@ if submitted:
                     data = request_estimation(payload)
                 _store_metrics_payload(data)
                 st.subheader("Resultado")
-                st.markdown(str(data.get("text", "")))
+                result = data.get("result")
+                if isinstance(result, dict):
+                    _render_estimation_result(result)
+                else:
+                    st.warning("La respuesta no incluye ``result`` estructurado.")
             except httpx.HTTPError as exc:
                 st.error(
                     f"No se pudo conectar con la API en `{ESTIMATE_ENDPOINT}`.\n\nDetalle: `{exc}`"
@@ -150,7 +168,7 @@ if submitted:
 
 with st.sidebar:
     st.header("Estimador CAG")
-    st.caption("Cliente del servicio FastAPI con respuesta JSON.")
+    st.caption("Cliente del servicio FastAPI con respuesta JSON estructurada.")
 
     tab_help, tab_cag, tab_srv, tab_metrics = st.tabs(["Cómo funciona", "Prompt CAG", "Servidor", "Métricas"])
 
@@ -158,22 +176,16 @@ with st.sidebar:
         st.markdown(
             """
 **1. Contexto fijo (CAG)**  
-El backend renderiza plantillas Jinja2 versionadas (`app/prompts/estimation/…`; el bundle activo
-está definido en `app/prompts/registry.py`)
-con rol de estimador, reglas por `detail_level` / `output_format` y few-shot en `examples.j2`.
+Plantillas Jinja2 v3 (`estimation-v3-structured`) con few-shot JSON por tipo de proyecto.
 
-**2. Formulario estructurado**  
-La descripción del proyecto y los selectores se serializan como `EstimationRequest`
-(JSON) hacia `POST /api/v1/estimate`.
+**2. Formulario**  
+`EstimationRequest` → `POST /api/v1/estimate`.
 
-**3. Respuesta JSON**  
-La API devuelve el texto de la estimación y las métricas en un solo cuerpo JSON.
-Esta interfaz muestra el texto con `st.markdown` y guarda las métricas en
-`st.session_state` para el panel lateral.
+**3. Respuesta**  
+`EstimationResponse.result` (`EstimationResult`): fases, totales y ``reasoning`` en Markdown.
 
 **4. Caché Redis (opcional)**  
-Si el servidor tiene `REDIS_URL`, peticiones idénticas pueden responder desde
-caché (`cache_hit: true`) sin llamar al LLM.
+Peticiones idénticas pueden devolver `cache_hit: true`.
             """.strip()
         )
         st.divider()
@@ -184,8 +196,8 @@ caché (`cache_hit: true`) sin llamar al LLM.
 
     with tab_cag:
         st.markdown(
-            "Vista previa con `EstimationRequest` de ejemplo (web SaaS / detalle medio / partidas en tabla). "
-            "Los few-shot viven en `examples.j2`."
+            "Vista previa con `EstimationRequest` de ejemplo (web SaaS / detalle medio). "
+            "Few-shots JSON en `app/fixtures/estimation_examples/`."
         )
         st.text_area("System prompt (solo lectura)", value=_system_prompt, height=200, disabled=True)
         st.text_area("User prompt (solo lectura)", value=_user_prompt_preview, height=160, disabled=True)
@@ -234,16 +246,7 @@ caché (`cache_hit: true`) sin llamar al LLM.
 
             ua = m.get("usage_available")
             ua_txt = "desconocido" if ua is None else ("true" if ua else "false")
-            st.metric(
-                label="usage_available",
-                value=ua_txt,
-                help=(
-                    "Indica si el proveedor devolvió uso de tokens en la respuesta. "
-                    " `true`: la respuesta incluía metadatos de uso. "
-                    " `false`: no hubo metadatos de uso, en cuyo caso "
-                    "los contadores serán 0, salvo que vengan de caché u otra fuente."
-                ),
-            )
+            st.metric(label="usage_available", value=ua_txt)
 
             st.markdown(
                 f"<span style='font-size:26px'>"

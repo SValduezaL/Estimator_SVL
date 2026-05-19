@@ -1,0 +1,27 @@
+{
+  "summary": "App de reservas para clínica con notificaciones push y pasarela de copago.",
+  "confidence_pct": 75,
+  "phases": [
+    {
+      "name": "Reservas",
+      "deliverable": "Calendario, slots y recordatorios push",
+      "hours": 40,
+      "cost_eur": 2400
+    },
+    {
+      "name": "Pagos",
+      "deliverable": "Copago con pasarela y recibos",
+      "hours": 24,
+      "cost_eur": 1440
+    },
+    {
+      "name": "Cumplimiento",
+      "deliverable": "Consentimientos y logs de acceso",
+      "hours": 20,
+      "cost_eur": 1200
+    }
+  ],
+  "total_duration_weeks": 9,
+  "total_cost_eur": 5040,
+  "reasoning": "## Decisiones regulatorias\nLa fase de cumplimiento está separada porque condiciona diseño de datos desde el inicio en salud.\n\n**Push + pagos** en fases distintas evita acoplar certificación PCI al MVP de agenda.\n\n**9 semanas** con equipo móvil mid y backend senior part-time."
+}

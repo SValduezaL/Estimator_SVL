@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from typing import Any
 
 import pytest
 import structlog
@@ -10,10 +11,24 @@ from fastapi.testclient import TestClient
 from structlog.testing import CapturingLogger
 
 from app.config import Settings, get_settings
+from app.fixtures.estimation_examples import load_validated_example
 from app.logging.config import configure_logging
 from app.main import app
+from app.schemas.estimation_common import ProjectType
+from app.services import llm_wrapper as lw_mod
 
-_LITELLM_STUB_COMPLETION_MARKDOWN = "## Estimación de prueba\n\nContenido mínimo para el doble de LiteLLM."
+_STUB_RESULT = load_validated_example(ProjectType.WEB_SAAS, 1)
+
+
+def _fake_raw_completion() -> object:
+    usage = type(
+        "U",
+        (),
+        {"prompt_tokens": 1234, "completion_tokens": 567, "total_tokens": 1801},
+    )()
+    msg = type("M", (), {"content": ""})()
+    choice = type("C", (), {"finish_reason": "stop", "message": msg})()
+    return type("R", (), {"choices": [choice], "usage": usage, "model": "gpt-4o-mini"})()
 
 
 def _test_settings() -> Settings:
@@ -32,6 +47,9 @@ def _test_settings() -> Settings:
 
 @pytest.fixture(autouse=True)
 def _configure_logging_for_tests() -> Iterator[None]:
+    from app.prompts.loader import clear_estimation_environment_cache
+
+    clear_estimation_environment_cache()
     configure_logging(_test_settings(), version="0.1.0-test")
     yield
 
@@ -57,44 +75,14 @@ def capture_logs() -> Iterator[CapturingLogger]:
 
 @pytest.fixture
 def litellm_stub_log(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
-    """Sustituye LiteLLM/Router por dobles que registran kwargs y devuelven respuesta fija."""
+    """Registra kwargs de ``complete_estimation`` sin llamar a Instructor."""
     log: list[dict] = []
 
-    def make_response(finish_reason: str) -> object:
-        usage = type(
-            "U",
-            (),
-            {
-                "prompt_tokens": 1234,
-                "completion_tokens": 567,
-                "total_tokens": 1801,
-            },
-        )()
-        msg = type("M", (), {"content": _LITELLM_STUB_COMPLETION_MARKDOWN})()
-        choice = type("C", (), {"finish_reason": finish_reason, "message": msg})()
-        return type("R", (), {"choices": [choice], "usage": usage, "model": "gpt-4o-mini"})()
+    def fake_complete_estimation(**kwargs: Any) -> tuple[Any, Any]:
+        log.append({"source": "structured", **kwargs})
+        return _STUB_RESULT, _fake_raw_completion()
 
-    import app.services.llm_wrapper as lw_mod
-
-    class FakeRouter:
-        def __init__(self, *args: object, **kwargs: object) -> None:
-            pass
-
-        def completion(self, model: str, **kwargs: object) -> object:
-            log.append({"source": "router", "route_model": model, **kwargs})
-            max_t = int(kwargs.get("max_tokens") or 4000)
-            fr = "length" if max_t <= 200 else "stop"
-            return make_response(fr)
-
-    monkeypatch.setattr(lw_mod, "Router", FakeRouter)
-
-    def litellm_completion(**kwargs: object) -> object:
-        log.append({"source": "litellm", **kwargs})
-        max_t = int(kwargs.get("max_tokens") or 4000)
-        fr = "length" if max_t <= 200 else "stop"
-        return make_response(fr)
-
-    monkeypatch.setattr(lw_mod.litellm, "completion", litellm_completion)
+    monkeypatch.setattr(lw_mod, "complete_estimation", fake_complete_estimation)
     return log
 
 

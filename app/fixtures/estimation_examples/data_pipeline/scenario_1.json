@@ -1,0 +1,27 @@
+{
+  "summary": "Pipeline batch diario de ventas hacia data warehouse con calidad y alertas.",
+  "confidence_pct": 74,
+  "phases": [
+    {
+      "name": "Ingesta",
+      "deliverable": "Extracción ERP y landing en object storage",
+      "hours": 28,
+      "cost_eur": 1680
+    },
+    {
+      "name": "Transform",
+      "deliverable": "dbt models y tests de calidad",
+      "hours": 36,
+      "cost_eur": 2160
+    },
+    {
+      "name": "Operación",
+      "deliverable": "Orquestación Airflow y alertas SLA",
+      "hours": 20,
+      "cost_eur": 1200
+    }
+  ],
+  "total_duration_weeks": 8,
+  "total_cost_eur": 5040,
+  "reasoning": "## Por qué batch diario\nEl SLA de frescura acordado es T+1; streaming sería sobredimensionado.\n\n**dbt** centraliza reglas de negocio reproducibles frente a SQL ad hoc en notebooks.\n\n**8 semanas** con data engineer senior y soporte plataforma existente."
+}

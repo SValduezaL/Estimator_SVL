@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
     temperature: float = Field(default=0.2, ge=0.0, le=1.0)
-    max_tokens: int = Field(default=800, ge=100, le=4000)
+    max_tokens: int = Field(default=2000, ge=100, le=4000)
     # Fallback LiteLLM (opcional): segundo despliegue bajo el mismo route ``estimator``.
     llm_fallback_model: str | None = Field(default=None)
     llm_timeout_seconds: int = Field(default=120, ge=5, le=600)

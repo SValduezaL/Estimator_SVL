@@ -12,8 +12,10 @@ from pathlib import Path
 import structlog
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
+from app.fixtures.estimation_examples import few_shot_json_block
 from app.prompts.registry import DEFAULT_ESTIMATION_BUNDLE, PromptBundle
-from app.schemas.estimation import EstimationRequest
+from app.schemas.estimation_common import ProjectType
+from app.schemas.estimation_request import EstimationRequest
 
 _PROMPTS_DIR = Path(__file__).resolve().parent
 _PROMPT_RENDER_PART_SEPARATOR = "\n\n---PROMPT_RENDER_SEPARATOR---\n\n"
@@ -24,20 +26,31 @@ def _sha256_hex(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _example_json_filter(project_type: str, scenario: int) -> str:
+    return few_shot_json_block(ProjectType(project_type), scenario)
+
+
 def build_estimation_jinja_environment() -> Environment:
     """Entorno Jinja2 para prompts de estimación (fail-fast con variables ausentes)."""
-    return Environment(
+    env = Environment(
         loader=FileSystemLoader(_PROMPTS_DIR),
         trim_blocks=True,
         lstrip_blocks=True,
         keep_trailing_newline=False,
         undefined=StrictUndefined,
     )
+    env.globals["example_json"] = _example_json_filter
+    return env
 
 
 @lru_cache
 def _cached_estimation_environment() -> Environment:
     return build_estimation_jinja_environment()
+
+
+def clear_estimation_environment_cache() -> None:
+    """Invalida el entorno Jinja cacheado (tests o recarga de filtros)."""
+    _cached_estimation_environment.cache_clear()
 
 
 def render_estimation_prompt(
@@ -76,14 +89,16 @@ def render_estimation_prompt(
 
     subdir = b.template_subdir
     env = _cached_estimation_environment()
-    ctx = {
+    ctx: dict[str, str] = {
         "description": request.description,
         "project_type": request.project_type.value,
         "detail_level": request.detail_level.value,
-        "output_format": request.output_format.value,
         "_prompt_bundle_version": subdir,
         "_examples_template": f"estimation/{subdir}/examples.j2",
     }
+    if subdir in ("v1", "v2"):
+        ctx["output_format"] = "line_items"
+
     system_t = env.get_template(f"estimation/{subdir}/system.j2")
     user_t = env.get_template(f"estimation/{subdir}/user.j2")
     system_prompt = system_t.render(**ctx).strip()

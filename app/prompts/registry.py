@@ -41,11 +41,19 @@ ESTIMATION_BUNDLE_V2: Final[PromptBundle] = PromptBundle(
     created_at=date(2026, 5, 13),
 )
 
-DEFAULT_ESTIMATION_BUNDLE: Final[PromptBundle] = ESTIMATION_BUNDLE_V2
+ESTIMATION_BUNDLE_V3: Final[PromptBundle] = PromptBundle(
+    use_case="estimation",
+    public_id="estimation-v3-structured",
+    template_subdir="v3",
+    created_at=date(2026, 5, 19),
+)
+
+DEFAULT_ESTIMATION_BUNDLE: Final[PromptBundle] = ESTIMATION_BUNDLE_V3
 
 ESTIMATION_BUNDLES_BY_PUBLIC_ID: Final[dict[str, PromptBundle]] = {
     ESTIMATION_BUNDLE_V1.public_id: ESTIMATION_BUNDLE_V1,
     ESTIMATION_BUNDLE_V2.public_id: ESTIMATION_BUNDLE_V2,
+    ESTIMATION_BUNDLE_V3.public_id: ESTIMATION_BUNDLE_V3,
 }
 
 # Contrato estable para clientes / tests (equivale a ``DEFAULT_ESTIMATION_BUNDLE.public_id``)

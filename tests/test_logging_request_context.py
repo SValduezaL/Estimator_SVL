@@ -13,7 +13,6 @@ _ESTIMATE_PAYLOAD = {
     "description": "Aplicación web con autenticación, panel admin y API REST documentada.",
     "project_type": "web_saas",
     "detail_level": "medium",
-    "output_format": "line_items",
 }
 _REQUEST_ID = "estimate-correlation-abc"
 
@@ -51,4 +50,4 @@ def test_estimate_logs_contain_request_id(client: TestClient, test_settings) -> 
     assert _REQUEST_ID in output
     assert "estimation_requested" in output
     assert "estimation_completed" in output
-    assert "llm_generate_started" in output
+    assert "llm_structured_started" in output

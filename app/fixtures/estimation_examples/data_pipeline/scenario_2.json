@@ -1,0 +1,27 @@
+{
+  "summary": "CDC en tiempo casi real desde PostgreSQL a lakehouse con contratos de esquema.",
+  "confidence_pct": 66,
+  "phases": [
+    {
+      "name": "CDC",
+      "deliverable": "Debezium y topics Kafka",
+      "hours": 40,
+      "cost_eur": 2400
+    },
+    {
+      "name": "Lakehouse",
+      "deliverable": "Bronce/plata y compactación",
+      "hours": 36,
+      "cost_eur": 2160
+    },
+    {
+      "name": "Gobierno",
+      "deliverable": "Linaje básico y schema registry",
+      "hours": 24,
+      "cost_eur": 1440
+    }
+  ],
+  "total_duration_weeks": 11,
+  "total_cost_eur": 6000,
+  "reasoning": "## Por qué Kafka + Debezium\nEl cliente ya opera Kafka; reutilizar reduce curva de aprendizaje frente a alternativas gestionadas nuevas.\n\n**Linaje** en fase final porque depende de metadatos estables del lakehouse.\n\n**11 semanas** por hardening de replicación y pruebas de carga."
+}

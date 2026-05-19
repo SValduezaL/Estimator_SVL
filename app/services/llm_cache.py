@@ -35,9 +35,11 @@ class EstimationCache:
         model: str,
         max_tokens: int,
         thinking_budget: int | None,
+        schema_version: str = "estimation.v1",
     ) -> str:
         payload = json.dumps(
             {
+                "schema_version": schema_version,
                 "system_prompt": system_prompt,
                 "user_message": user_message,
                 "model": model,
@@ -47,7 +49,7 @@ class EstimationCache:
             sort_keys=True,
         )
         digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
-        return f"estimation:{digest}"
+        return f"estimation:{schema_version}:{digest}"
 
     def get(self, key: str) -> dict[str, Any] | None:
         try:

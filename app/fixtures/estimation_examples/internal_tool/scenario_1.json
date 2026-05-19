@@ -1,0 +1,27 @@
+{
+  "summary": "Panel interno de aprobación de gastos con flujo multinivel y export a ERP.",
+  "confidence_pct": 78,
+  "phases": [
+    {
+      "name": "Workflow",
+      "deliverable": "Motor de estados y notificaciones email",
+      "hours": 32,
+      "cost_eur": 1920
+    },
+    {
+      "name": "UI admin",
+      "deliverable": "Bandeja aprobadores y auditoría",
+      "hours": 28,
+      "cost_eur": 1680
+    },
+    {
+      "name": "ERP",
+      "deliverable": "Conector batch nocturno y conciliación",
+      "hours": 20,
+      "cost_eur": 1200
+    }
+  ],
+  "total_duration_weeks": 8,
+  "total_cost_eur": 4800,
+  "reasoning": "## Por qué separar ERP\nEl conector batch reduce riesgo frente a API en tiempo real no documentada por finanzas.\n\n**Stack interno:** React + API en stack ya usado por el cliente para acelerar adopción.\n\n**8 semanas** con un full-stack y soporte funcional del área de compras."
+}

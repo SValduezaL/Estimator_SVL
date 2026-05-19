@@ -1,0 +1,27 @@
+{
+  "summary": "Consola de soporte L2 con búsqueda unificada en tickets, logs y pedidos.",
+  "confidence_pct": 71,
+  "phases": [
+    {
+      "name": "Índice",
+      "deliverable": "Búsqueda federada en tres fuentes",
+      "hours": 44,
+      "cost_eur": 2640
+    },
+    {
+      "name": "UI agente",
+      "deliverable": "Vista 360 y acciones seguras",
+      "hours": 32,
+      "cost_eur": 1920
+    },
+    {
+      "name": "Gobernanza",
+      "deliverable": "Roles, masking PII y auditoría",
+      "hours": 24,
+      "cost_eur": 1440
+    }
+  ],
+  "total_duration_weeks": 10,
+  "total_cost_eur": 6000,
+  "reasoning": "## Por qué índice primero\nSin búsqueda unificada el resto no aporta valor; es el cuello de botella operativo actual.\n\n**Masking PII** en fase final para no bloquear prototipo con datos sintéticos.\n\n**10 semanas** con data engineer part-time en la fase índice."
+}
