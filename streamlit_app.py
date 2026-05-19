@@ -6,7 +6,6 @@ import os
 from typing import Any
 
 import httpx
-import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 
@@ -22,11 +21,71 @@ from app.schemas.estimation import (
 load_dotenv()
 
 MIN_DESCRIPTION_LEN = 20
+_MAX_PROMPT_PREVIEW_CHARS = 80_000
 
 _api_base = (
     (os.getenv("ESTIMATOR_API_BASE_URL") or os.getenv("API_BASE_URL") or "http://localhost:8000").rstrip("/")
 )
 ESTIMATE_ENDPOINT = f"{_api_base}/api/v1/estimate"
+
+_PHASE_COLUMNS = (
+    "name",
+    "deliverable",
+    "stack",
+    "hours",
+    "cost_eur",
+    "confidence_pct",
+    "risks_notes",
+)
+_PHASE_HEADERS = {
+    "name": "Fase",
+    "deliverable": "Entregable",
+    "stack": "Stack",
+    "hours": "Horas",
+    "cost_eur": "Coste (EUR)",
+    "confidence_pct": "Conf. %",
+    "risks_notes": "Riesgos / notas",
+}
+
+
+def _stat_cell(label: str, value: str, *, bordered: bool = True) -> None:
+    """Métrica sin ``st.metric`` (evita chunk JS ``Metric.*.js``)."""
+    box_style = "padding:0.35rem 0.5rem"
+    if bordered:
+        box_style += ";border:1px solid rgba(128,128,128,0.35);border-radius:0.4rem"
+    st.markdown(
+        f"<div style='{box_style}'>"
+        f"<div style='font-size:0.8rem;opacity:0.85'>{label}</div>"
+        f"<div style='font-size:1.35rem;font-weight:600;margin-top:0.15rem'>{value}</div>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _phases_markdown_table(phases: list[dict[str, Any]]) -> str:
+    headers = [_PHASE_HEADERS.get(c, c) for c in _PHASE_COLUMNS]
+    lines = [
+        "| " + " | ".join(headers) + " |",
+        "| " + " | ".join("---" for _ in headers) + " |",
+    ]
+    for row in phases:
+        cells: list[str] = []
+        for col in _PHASE_COLUMNS:
+            raw = row.get(col)
+            if raw is None or raw == "":
+                cells.append("—")
+            elif col == "cost_eur":
+                cells.append(f"{int(raw):,}".replace(",", "."))
+            elif col == "stack":
+                if isinstance(raw, list):
+                    cells.append(", ".join(str(item) for item in raw if item))
+                else:
+                    cells.append("—")
+            else:
+                cells.append(str(raw).replace("|", "\\|"))
+        lines.append("| " + " | ".join(cells) + " |")
+    return "\n".join(lines)
+
 
 st.set_page_config(
     page_title="Estimador CAG",
@@ -34,13 +93,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-
-_preview_request = EstimationRequest(
-    description="Texto de ejemplo para la vista previa del prompt (mín. 20 caracteres).",
-    project_type=ProjectType.WEB_SAAS,
-    detail_level=DetailLevel.MEDIUM,
-)
-_system_prompt, _user_prompt_preview = render_estimation_prompt(_preview_request)
 
 
 def request_estimation(payload: dict[str, Any]) -> dict[str, Any]:
@@ -71,7 +123,6 @@ def _store_metrics_payload(data: dict[str, Any]) -> None:
         "cache_hit": bool(data.get("cache_hit", False)),
         "finish_reason": str(data.get("finish_reason", "—")),
         "cost_usd": float(data.get("cost_usd", 0.0)),
-        "usage_available": data.get("usage_available"),
         "prompt_version": str(data.get("prompt_version", "—")),
         "prompt_version_created_at": str(data.get("prompt_version_created_at", "—")),
     }
@@ -81,23 +132,45 @@ def _render_estimation_result(result: dict[str, Any]) -> None:
     st.markdown(f"**{result.get('summary', '')}**")
     c1, c2, c3 = st.columns(3)
     with c1:
-        st.metric("Confianza", f"{result.get('confidence_pct', 0)} %")
+        _stat_cell("Confianza", f"{result.get('confidence_pct', 0)} %")
     with c2:
-        st.metric("Duración", f"{result.get('total_duration_weeks', 0)} sem")
+        _stat_cell("Duración", f"{result.get('total_duration_weeks', 0)} sem")
     with c3:
-        st.metric("Coste total", f"{int(result.get('total_cost_eur', 0)):,} EUR".replace(",", "."))
+        _stat_cell(
+            "Coste total",
+            f"{int(result.get('total_cost_eur', 0)):,} EUR".replace(",", "."),
+        )
 
     phases = result.get("phases") or []
     if phases:
         st.subheader("Fases")
-        st.dataframe(
-            pd.DataFrame(phases),
-            use_container_width=True,
-            hide_index=True,
-        )
+        st.markdown(_phases_markdown_table(phases))
 
-    with st.expander("Justificación (reasoning)", expanded=True):
+    with st.expander("Justificación", expanded=True):
         st.markdown(str(result.get("reasoning", "")))
+
+
+def _render_prompt_preview_block(label: str, content: str) -> None:
+    """Vista previa de solo lectura sin ``st.text_area`` (evita fallos del chunk TextArea)."""
+    truncated = len(content) > _MAX_PROMPT_PREVIEW_CHARS
+    shown = content if not truncated else content[:_MAX_PROMPT_PREVIEW_CHARS] + "\n\n… [truncado]"
+    st.caption(f"{label} — {len(content):,} caracteres".replace(",", "."))
+    if truncated:
+        st.warning("Vista previa truncada en la UI; el prompt completo se envía al LLM sin recorte.")
+    st.code(shown, language="text", line_numbers=True)
+
+
+def _refresh_prompt_preview(request: EstimationRequest) -> None:
+    system_prompt, user_prompt = render_estimation_prompt(request)
+    st.session_state.prompt_preview = {
+        "system": system_prompt,
+        "user": user_prompt,
+        "key": (
+            request.project_type.value,
+            request.detail_level.value,
+            hash(request.description),
+        ),
+    }
 
 
 if "last_metrics" not in st.session_state:
@@ -113,6 +186,7 @@ with st.form("estimation_form"):
         "Descripción del proyecto",
         height=180,
         placeholder="Describe alcance, integraciones conocidas, plazos y restricciones (mín. 20 caracteres).",
+        key="project_description",
     )
     c1, c2 = st.columns(2)
     with c1:
@@ -120,12 +194,14 @@ with st.form("estimation_form"):
             "Tipo de proyecto",
             options=list(ProjectType),
             format_func=lambda p: PROJECT_TYPE_LABELS[p],
+            key="project_type",
         )
     with c2:
         detail_level = st.selectbox(
             "Nivel de detalle",
             options=list(DetailLevel),
             format_func=lambda d: DETAIL_LEVEL_LABELS[d],
+            key="detail_level",
         )
     submitted = st.form_submit_button("Generar estimación")
 
@@ -156,6 +232,18 @@ if submitted:
                     _render_estimation_result(result)
                 else:
                     st.warning("La respuesta no incluye ``result`` estructurado.")
+            except httpx.HTTPStatusError as exc:
+                detail = exc.response.text
+                try:
+                    body = exc.response.json()
+                    if isinstance(body, dict) and body.get("detail"):
+                        detail = body["detail"]
+                except Exception:
+                    pass
+                st.error(
+                    f"Error de la API ({exc.response.status_code}) en `{ESTIMATE_ENDPOINT}`.\n\n"
+                    f"**Detalle:** {detail}"
+                )
             except httpx.HTTPError as exc:
                 st.error(
                     f"No se pudo conectar con la API en `{ESTIMATE_ENDPOINT}`.\n\nDetalle: `{exc}`"
@@ -186,21 +274,63 @@ Plantillas Jinja2 v3 (`estimation-v3-structured`) con few-shot JSON por tipo de 
 
 **4. Caché Redis (opcional)**  
 Peticiones idénticas pueden devolver `cache_hit: true`.
+
+**Si ves errores de chunks JS** (`TextArea`, `Metric`, `DataFrame`): recarga forzada
+(Ctrl+F5) o reinicia `streamlit run`. Esta UI evita esos widgets cuando es posible.
             """.strip()
         )
         st.divider()
         st.markdown(
-            f"**Validación:** la descripción debe tener al menos **{MIN_DESCRIPTION_LEN}** caracteres."
+            f"**Validación:** la descripción debe tener al menos **{MIN_DESCRIPTION_LEN}** caracteres "
+            f"(máx. 2000 en la API)."
         )
         st.link_button("Abrir documentación OpenAPI", f"{_api_base}/docs")
 
     with tab_cag:
         st.markdown(
-            "Vista previa con `EstimationRequest` de ejemplo (web SaaS / detalle medio). "
-            "Few-shots JSON en `app/fixtures/estimation_examples/`."
+            "Vista previa del prompt renderizado (solo lectura, vía `st.code` — no `text_area` deshabilitado)."
         )
-        st.text_area("System prompt (solo lectura)", value=_system_prompt, height=200, disabled=True)
-        st.text_area("User prompt (solo lectura)", value=_user_prompt_preview, height=160, disabled=True)
+        prev_desc = st.text_input(
+            "Descripción para la vista previa",
+            value="Texto de ejemplo para la vista previa del prompt (mín. 20 caracteres).",
+            key="preview_description",
+        )
+        pc1, pc2 = st.columns(2)
+        with pc1:
+            prev_type = st.selectbox(
+                "Tipo (preview)",
+                options=list(ProjectType),
+                format_func=lambda p: PROJECT_TYPE_LABELS[p],
+                key="preview_project_type",
+            )
+        with pc2:
+            prev_level = st.selectbox(
+                "Detalle (preview)",
+                options=list(DetailLevel),
+                format_func=lambda d: DETAIL_LEVEL_LABELS[d],
+                key="preview_detail_level",
+            )
+
+        if st.button("Actualizar vista previa del prompt", key="btn_refresh_prompt_preview"):
+            try:
+                preview_req = EstimationRequest(
+                    description=(prev_desc or "").strip(),
+                    project_type=prev_type,
+                    detail_level=prev_level,
+                )
+            except Exception as exc:
+                st.error(f"No se pudo construir la petición de preview: {exc}")
+            else:
+                _refresh_prompt_preview(preview_req)
+
+        preview = st.session_state.get("prompt_preview")
+        if preview:
+            with st.expander("System prompt", expanded=False):
+                _render_prompt_preview_block("System", preview["system"])
+            with st.expander("User prompt", expanded=False):
+                _render_prompt_preview_block("User", preview["user"])
+        else:
+            st.info("Pulsa «Actualizar vista previa del prompt» para renderizar los templates.")
 
     with tab_srv:
         st.subheader("Conexión")
@@ -221,32 +351,57 @@ Peticiones idénticas pueden devolver `cache_hit: true`.
         if st.session_state.last_metrics:
             m = st.session_state.last_metrics
 
-            st.markdown(f"**Modelo**: {m.get('model', '—')}")
-            st.markdown(f"**Proveedor:** {m.get('provider', '—')}")
-            st.markdown(f"**Versión de prompt:** {m.get('prompt_version', '—')}")
-            st.markdown(
-                f"**Fecha de referencia del bundle:** {m.get('prompt_version_created_at', '—')}"
-            )
+            m1, m2 = st.columns(2)
+            with m1:
+                _stat_cell("Modelo", str(m.get("model", "—")), bordered=False)
+            with m2:
+                _stat_cell("Proveedor", str(m.get("provider", "—")), bordered=False)
+
+            p1, p2 = st.columns(2)
+            with p1:
+                _stat_cell(
+                    "Versión del prompt",
+                    str(m.get("prompt_version", "—")),
+                    bordered=False,
+                )
+            with p2:
+                _stat_cell(
+                    "Fecha del bundle",
+                    str(m.get("prompt_version_created_at", "—")),
+                    bordered=False,
+                )
 
             t1, t2, t3 = st.columns(3)
             with t1:
-                st.metric("Tokens entrada", f"{int(m['input_tokens']):,}".replace(",", "."))
+                _stat_cell(
+                    "Tokens entrada",
+                    f"{int(m['input_tokens']):,}".replace(",", "."),
+                    bordered=False,
+                )
             with t2:
-                st.metric("Tokens salida", f"{int(m['output_tokens']):,}".replace(",", "."))
+                _stat_cell(
+                    "Tokens salida",
+                    f"{int(m['output_tokens']):,}".replace(",", "."),
+                    bordered=False,
+                )
             with t3:
-                st.metric("Tokens total", f"{int(m.get('total_tokens', 0)):,}".replace(",", "."))
+                _stat_cell(
+                    "Tokens total",
+                    f"{int(m.get('total_tokens', 0)):,}".replace(",", "."),
+                    bordered=False,
+                )
 
             r1, r2, r3 = st.columns(3)
             with r1:
-                st.metric("Tiempo", f"{float(m['response_seconds']):.2f} s")
+                _stat_cell("Tiempo", f"{float(m['response_seconds']):.2f} s", bordered=False)
             with r2:
-                st.metric("Motivo de fin", f"{m.get('finish_reason', '—')}")
+                _stat_cell("Motivo de fin", f"{m.get('finish_reason', '—')}", bordered=False)
             with r3:
-                st.metric("Caché Redis", "hit" if m["cache_hit"] else "miss")
-
-            ua = m.get("usage_available")
-            ua_txt = "desconocido" if ua is None else ("true" if ua else "false")
-            st.metric(label="usage_available", value=ua_txt)
+                _stat_cell(
+                    "Caché Redis",
+                    "hit" if m["cache_hit"] else "miss",
+                    bordered=False,
+                )
 
             st.markdown(
                 f"<span style='font-size:26px'>"

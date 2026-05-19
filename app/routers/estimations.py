@@ -104,7 +104,6 @@ async def create_estimation(
         model=str(metrics.get("model", model_used)),
         provider=str(metrics["provider"]),
         usage=TokenUsageResponse(**metrics["usage"]),
-        usage_available=bool(metrics["usage_available"]),
         cache_hit=bool(metrics["cache_hit"]),
         finish_reason=str(metrics.get("finish_reason", "stop")),
         cost_usd=float(metrics["cost_usd"]),

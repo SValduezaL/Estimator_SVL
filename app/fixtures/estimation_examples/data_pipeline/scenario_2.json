@@ -5,23 +5,26 @@
     {
       "name": "CDC",
       "deliverable": "Debezium y topics Kafka",
+      "stack": ["Debezium", "Kafka", "PostgreSQL", "Schema Registry"],
       "hours": 40,
       "cost_eur": 2400
     },
     {
       "name": "Lakehouse",
       "deliverable": "Bronce/plata y compactación",
+      "stack": ["Delta Lake", "Spark", "S3", "Iceberg"],
       "hours": 36,
       "cost_eur": 2160
     },
     {
       "name": "Gobierno",
       "deliverable": "Linaje básico y schema registry",
+      "stack": ["OpenLineage", "Confluent Schema Registry", "DataHub"],
       "hours": 24,
       "cost_eur": 1440
     }
   ],
   "total_duration_weeks": 11,
   "total_cost_eur": 6000,
-  "reasoning": "## Por qué Kafka + Debezium\nEl cliente ya opera Kafka; reutilizar reduce curva de aprendizaje frente a alternativas gestionadas nuevas.\n\n**Linaje** en fase final porque depende de metadatos estables del lakehouse.\n\n**11 semanas** por hardening de replicación y pruebas de carga."
+  "reasoning": "## División en fases\nEl cliente ya opera Kafka; reutilizarlo reduce curva de aprendizaje. Linaje en fase final porque depende de metadatos estables del lakehouse.\n\n## Stack por fase\nCDC captura cambios en origen; lakehouse materializa capas bronce/plata; gobierno documenta contratos cuando el flujo es estable.\n\n## Esfuerzo por fase\nCDC concentra riesgo de replicación; lakehouse por compactación y pruebas de carga; gobierno es acotado pero bloqueante para consumo downstream."
 }

@@ -40,6 +40,24 @@ def _usage_tokens(usage: Any) -> tuple[int, int, int]:
     return inp, out, tot
 
 
+def _cache_hit_metrics(cached: dict[str, Any], *, cache_key_model: str) -> dict[str, Any]:
+    """Métricas al servir desde Redis: modelo y proveedor de la inferencia almacenada."""
+    usage = cached.get(
+        "usage",
+        {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+    )
+    resolved_model = str(cached.get("model", cache_key_model))
+    prov = str(cached.get("provider") or provider_from_model(resolved_model))
+    return {
+        "usage": dict(usage),
+        "finish_reason": str(cached.get("finish_reason", "stop")),
+        "cache_hit": True,
+        "provider": prov,
+        "model": resolved_model,
+        "cost_usd": float(cached.get("cost_usd", 0.0)),
+    }
+
+
 class LLMWrapper:
     """LiteLLM + Router (fallback opcional), caché exacta y tracking de coste."""
 
@@ -102,6 +120,8 @@ class LLMWrapper:
         self._instructor_direct = instructor_client_for_completion(litellm.completion)
 
         def _routed_completion(**kwargs: Any) -> Any:
+            # Instructor pasa ``model`` en kwargs; el Router ya usa el alias ``estimator``.
+            kwargs.pop("model", None)
             return self.router.completion(model="estimator", **kwargs)
 
         self._instructor_routed = instructor_client_for_completion(_routed_completion)
@@ -192,22 +212,7 @@ class LLMWrapper:
                     latency_ms=0,
                     chars=len(full),
                 )
-                usage = cached.get(
-                    "usage",
-                    {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
-                )
-                prov = str(
-                    cached.get("provider")
-                    or provider_from_model(str(cached.get("model", cache_key_model)))
-                )
-                return full, {
-                    "usage": dict(usage),
-                    "usage_available": True,
-                    "finish_reason": str(cached.get("finish_reason", "stop")),
-                    "cache_hit": True,
-                    "provider": prov,
-                    "cost_usd": float(cached.get("cost_usd", 0.0)),
-                }
+                return full, _cache_hit_metrics(cached, cache_key_model=cache_key_model)
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -246,7 +251,6 @@ class LLMWrapper:
         rendered = (getattr(choice.message, "content", None) or "").strip()
         finish_reason = str(getattr(choice, "finish_reason", None) or "stop")
         input_tokens, output_tokens, total_tokens = _usage_tokens(getattr(response, "usage", None))
-        usage_available = getattr(response, "usage", None) is not None
         log.info(
             "llm_generate_completed",
             log_category="technical",
@@ -284,7 +288,6 @@ class LLMWrapper:
                 "output_tokens": output_tokens,
                 "total_tokens": total_tokens,
             },
-            "usage_available": usage_available,
             "cache_hit": False,
             "finish_reason": finish_reason,
             "provider": gen_provider,
@@ -309,7 +312,6 @@ class LLMWrapper:
         )
         return {
             "usage": usage,
-            "usage_available": bool(meta["usage_available"]),
             "cache_hit": cache_hit,
             "finish_reason": str(meta["finish_reason"]),
             "provider": gen_provider,
@@ -424,22 +426,7 @@ class LLMWrapper:
                     phase_count=len(result.phases),
                     reasoning_chars=len(result.reasoning),
                 )
-                usage = cached.get(
-                    "usage",
-                    {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
-                )
-                prov = str(
-                    cached.get("provider")
-                    or provider_from_model(str(cached.get("model", cache_key_model)))
-                )
-                return result, {
-                    "usage": dict(usage),
-                    "usage_available": True,
-                    "finish_reason": str(cached.get("finish_reason", "stop")),
-                    "cache_hit": True,
-                    "provider": prov,
-                    "cost_usd": float(cached.get("cost_usd", 0.0)),
-                }
+                return result, _cache_hit_metrics(cached, cache_key_model=cache_key_model)
 
         messages = [
             {"role": "system", "content": system_prompt},

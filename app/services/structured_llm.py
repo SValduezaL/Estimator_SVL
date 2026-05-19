@@ -7,6 +7,7 @@ from typing import Any, Callable
 import instructor
 import structlog
 from litellm import completion
+
 from app.schemas.estimation_common import REASONING_BOUNDS, DetailLevel
 from app.schemas.estimation_output import EstimationResult
 
@@ -19,13 +20,40 @@ class ReasoningLengthError(ValueError):
     """``reasoning`` fuera del rango permitido para el ``detail_level`` solicitado."""
 
 
-def assert_reasoning_length(result: EstimationResult, detail_level: DetailLevel) -> None:
-    n = len(result.reasoning)
+def assert_reasoning_length(result: EstimationResult, detail_level: DetailLevel) -> EstimationResult:
+    """Valida longitud mínima; recorta suavemente si supera el máximo (evita 502 por Markdown largo)."""
     lo, hi = REASONING_BOUNDS[detail_level.value]
-    if not lo <= n <= hi:
+    n = len(result.reasoning)
+    if n < lo:
         raise ReasoningLengthError(
             f"reasoning length {n} not in [{lo}, {hi}] for detail_level={detail_level.value!r}"
         )
+    if n <= hi:
+        return result
+
+    log.warning(
+        "reasoning_truncated",
+        log_category="technical",
+        error_recoverable=True,
+        detail_level=detail_level.value,
+        original_chars=n,
+        max_allowed=hi,
+    )
+    trimmed = result.reasoning[:hi]
+    if n > hi:
+        last_break = trimmed.rfind("\n\n")
+        if last_break >= lo:
+            trimmed = trimmed[:last_break].strip()
+        else:
+            trimmed = trimmed.rstrip()
+            if not trimmed.endswith("…"):
+                trimmed = trimmed[: max(hi - 1, lo)] + "…"
+    if len(trimmed) < lo:
+        raise ReasoningLengthError(
+            f"reasoning length {len(trimmed)} below minimum {lo} after truncation "
+            f"for detail_level={detail_level.value!r}"
+        )
+    return result.model_copy(update={"reasoning": trimmed})
 
 
 def extract_metrics(raw: Any) -> dict[str, Any]:
@@ -46,7 +74,6 @@ def extract_metrics(raw: Any) -> dict[str, Any]:
             "output_tokens": out,
             "total_tokens": total,
         },
-        "usage_available": usage_obj is not None,
         "finish_reason": finish_reason,
         "model": model,
     }
@@ -56,9 +83,10 @@ def _reasoning_retry_message(detail_level: DetailLevel) -> str:
     lo, hi = REASONING_BOUNDS[detail_level.value]
     return (
         f'El campo "reasoning" debe tener entre {lo} y {hi} caracteres para '
-        f'detail_level={detail_level.value!r}. Debe ser Markdown en español que '
-        "justifique las decisiones (fases, tecnología, costes, plazo). "
-        "No repitas la tabla de phases."
+        f'detail_level={detail_level.value!r}. Debe ser Markdown en español (CoT): '
+        "por qué N fases, por qué el stack de cada fase (ya en phases[].stack) y por qué "
+        "las horas por fase. No listes tecnologías ni totales de coste/duración. "
+        f"Respuesta anterior demasiado larga: acorta reasoning a como máximo {hi} caracteres."
     )
 
 
@@ -93,9 +121,10 @@ def complete_estimation(
 
     result, raw = client.chat.completions.create_with_completion(**base_kw)
     try:
-        assert_reasoning_length(result, detail_level)
-        return result, raw
+        return assert_reasoning_length(result, detail_level), raw
     except ReasoningLengthError as exc:
+        if "below minimum" in str(exc):
+            raise
         log.warning(
             "reasoning_length_failed",
             log_category="technical",
@@ -112,8 +141,7 @@ def complete_estimation(
         result2, raw2 = client.chat.completions.create_with_completion(
             **{**base_kw, "messages": retry_messages, "max_retries": 1},
         )
-        assert_reasoning_length(result2, detail_level)
-        return result2, raw2
+        return assert_reasoning_length(result2, detail_level), raw2
 
 
 def instructor_client_for_completion(

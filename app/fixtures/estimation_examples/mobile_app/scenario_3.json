@@ -5,23 +5,26 @@
     {
       "name": "Plataforma",
       "deliverable": "Shell app y SDK de módulos",
+      "stack": ["Kotlin Multiplatform", "Gradle", "módulos dinámicos", "REST SDK"],
       "hours": 44,
       "cost_eur": 2640
     },
     {
       "name": "Seguridad",
       "deliverable": "Biometría y gestión de sesión",
+      "stack": ["Android BiometricPrompt", "iOS LocalAuthentication", "OAuth2", "Keychain"],
       "hours": 28,
       "cost_eur": 1680
     },
     {
       "name": "Módulos MVP",
       "deliverable": "Dos módulos operativos iniciales",
+      "stack": ["Kotlin", "SwiftUI bridge", "API interna", "feature modules"],
       "hours": 36,
       "cost_eur": 2160
     }
   ],
   "total_duration_weeks": 12,
   "total_cost_eur": 6480,
-  "reasoning": "## Por qué arquitectura modular\nEl cliente prevé más módulos; el shell amortiza futuras entregas frente a apps monolíticas repetidas.\n\n**Biometría** en fase propia por variabilidad Android/iOS.\n\n**12 semanas** incluyen diseño de contrato entre equipos internos."
+  "reasoning": "## División en fases\nEl cliente prevé más módulos; el shell amortiza futuras entregas. Biometría en fase propia por variabilidad Android/iOS.\n\n## Stack por fase\nPlataforma define contratos entre módulos; seguridad unifica sesión y hardware biométrico; MVP valida el plug-in con dos dominios operativos.\n\n## Esfuerzo por fase\nPlataforma absorbe diseño de SDK; seguridad es media por pruebas en dispositivos; módulos MVP dependen de contratos ya cerrados."
 }

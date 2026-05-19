@@ -28,7 +28,8 @@ Antes de cerrar el JSON, verifica:
 1. ¿``total_cost_eur`` es la suma exacta de ``phases[].cost_eur``?
 2. ¿``confidence_pct`` refleja la incertidumbre del alcance?
 3. Si ``confidence_pct`` &lt; 40, ¿``summary`` empieza por ``[FUERA_DE_ALCANCE]``?
-4. ¿``reasoning`` justifica decisiones sin repetir la tabla de fases?
+4. ¿Cada fase tiene ``stack`` (lista no vacía de strings) coherente con su entregable?
+5. ¿``reasoning`` explica el porqué sin volver a listar ``stack``, ni totales de coste/duración?
 </pre_response_checklist>
 
 <project_type_hints>
@@ -43,18 +44,36 @@ Prioriza fuentes de datos, calidad, orquestación, idempotencia y SLAs de frescu
 {% endif %}
 </project_type_hints>
 
+<phases_stack>
+Cada elemento de ``phases`` debe incluir ``stack``: lista de strings (1–12 ítems) con
+tecnologías, frameworks, servicios cloud o herramientas usadas **solo en esa fase**
+(p. ej. ``["React", "PostgreSQL", "Stripe API"]``). Los nombres concretos van aquí, no en
+``reasoning``.
+</phases_stack>
+
 <reasoning_format>
-El campo ``reasoning`` (último en el JSON) debe ser **Markdown** en español.
-Explica el **PORQUÉ** de: número y tipo de fases, tecnologías elegidas, horas y coste por fase,
-duración total y nivel de confianza. No describas tu proceso de pensamiento ni chain-of-thought.
-No copies la lista de ``phases`` como tabla; interpreta y justifica.
+El campo ``reasoning`` (último en el JSON) es **Markdown** en español: una cadena de
+razonamiento legible sobre **cómo** llegaste a ``summary`` y ``phases`` (no un resumen
+duplicado de cifras).
+
+Debe cubrir, con secciones ``##`` según el nivel de detalle:
+1. **División en fases** — por qué este alcance se parte en N fases y qué riesgo o dependencia
+   motiva cada corte (sin tabla ni lista de fases).
+2. **Stack por fase** — por qué cada fase usa las tecnologías ya declaradas en
+   ``phases[].stack`` (puedes nombrar la fase; no repitas el listado completo de ``stack``).
+3. **Esfuerzo por fase** — por qué las horas de cada fase son proporcionales a su complejidad,
+   incertidumbre o paralelismo posible (sin repetir ``total_cost_eur``, ``total_duration_weeks``,
+   tarifas EUR/h ni sumar horas globales).
+
+**Prohibido en ``reasoning``:** bloques tipo «Stack:», «Coste y duración:», recitar tecnologías
+que ya están en ``phases[].stack``, o reiterar totales que figuran en el JSON.
 
 {% if detail_level == "summary" %}
-Longitud de ``reasoning``: 80–400 caracteres; 1–2 párrafos.
+Longitud de ``reasoning``: 100–700 caracteres; 1–2 secciones ``##`` breves.
 {% elif detail_level == "medium" %}
-Longitud de ``reasoning``: 150–900 caracteres; secciones ## cortas.
+Longitud de ``reasoning``: 200–1400 caracteres; 2–3 secciones ``##``.
 {% elif detail_level == "detailed" %}
-Longitud de ``reasoning``: 300–2400 caracteres; justificación por decisión importante.
+Longitud de ``reasoning``: 400–4000 caracteres; justificación explícita por fase cuando aplique.
 {% endif %}
 </reasoning_format>
 

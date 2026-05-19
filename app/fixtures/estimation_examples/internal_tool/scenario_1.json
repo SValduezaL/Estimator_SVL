@@ -5,23 +5,26 @@
     {
       "name": "Workflow",
       "deliverable": "Motor de estados y notificaciones email",
+      "stack": ["Django", "Celery", "PostgreSQL", "SendGrid"],
       "hours": 32,
       "cost_eur": 1920
     },
     {
       "name": "UI admin",
       "deliverable": "Bandeja aprobadores y auditoría",
+      "stack": ["React", "TypeScript", "TanStack Query", "Django REST"],
       "hours": 28,
       "cost_eur": 1680
     },
     {
       "name": "ERP",
       "deliverable": "Conector batch nocturno y conciliación",
+      "stack": ["Python batch", "SFTP", "SAP BAPI", "cron"],
       "hours": 20,
       "cost_eur": 1200
     }
   ],
   "total_duration_weeks": 8,
   "total_cost_eur": 4800,
-  "reasoning": "## Por qué separar ERP\nEl conector batch reduce riesgo frente a API en tiempo real no documentada por finanzas.\n\n**Stack interno:** React + API en stack ya usado por el cliente para acelerar adopción.\n\n**8 semanas** con un full-stack y soporte funcional del área de compras."
+  "reasoning": "## División en fases\nERP separado porque finanzas no documentó API en tiempo real; el workflow debe existir antes de la bandeja de aprobación.\n\n## Stack por fase\nWorkflow con motor de estados y colas; UI admin reutiliza API ya expuesta; ERP usa batch para reducir riesgo de integración.\n\n## Esfuerzo por fase\nWorkflow es el núcleo funcional; UI admin iterativa con aprobadores; ERP es menor pero con pruebas de conciliación nocturna."
 }

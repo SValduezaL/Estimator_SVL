@@ -5,23 +5,26 @@
     {
       "name": "Reservas",
       "deliverable": "Calendario, slots y recordatorios push",
+      "stack": ["React Native", "Expo", "Firebase Cloud Messaging", "Node.js"],
       "hours": 40,
       "cost_eur": 2400
     },
     {
       "name": "Pagos",
       "deliverable": "Copago con pasarela y recibos",
+      "stack": ["Stripe SDK", "Node.js", "PostgreSQL", "webhooks"],
       "hours": 24,
       "cost_eur": 1440
     },
     {
       "name": "Cumplimiento",
       "deliverable": "Consentimientos y logs de acceso",
+      "stack": ["PostgreSQL audit", "consent management", "GDPR logs"],
       "hours": 20,
       "cost_eur": 1200
     }
   ],
   "total_duration_weeks": 9,
   "total_cost_eur": 5040,
-  "reasoning": "## Decisiones regulatorias\nLa fase de cumplimiento está separada porque condiciona diseño de datos desde el inicio en salud.\n\n**Push + pagos** en fases distintas evita acoplar certificación PCI al MVP de agenda.\n\n**9 semanas** con equipo móvil mid y backend senior part-time."
+  "reasoning": "## División en fases\nCumplimiento condiciona diseño de datos desde el inicio en salud; pagos en fase propia evita acoplar certificación PCI al MVP de agenda.\n\n## Stack por fase\nReservas prioriza UX y push; pagos aísla SDK y webhooks; cumplimiento añade trazabilidad sin bloquear el calendario inicial.\n\n## Esfuerzo por fase\nReservas es la más amplia por calendario y notificaciones; pagos es acotada pero con pruebas de pasarela; cumplimiento requiere revisión legal iterativa."
 }

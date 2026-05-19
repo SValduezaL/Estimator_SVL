@@ -2,14 +2,23 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, model_validator
+from typing import Annotated
+
+from pydantic import BaseModel, Field, StringConstraints, model_validator
 
 from app.schemas.estimation_common import LOW_CONFIDENCE_THRESHOLD, OUT_OF_SCOPE_PREFIX
+
+StackItem = Annotated[str, StringConstraints(min_length=1, max_length=80, strip_whitespace=True)]
 
 
 class Phase(BaseModel):
     name: str = Field(min_length=2, max_length=120)
     deliverable: str = Field(min_length=5, max_length=400)
+    stack: list[StackItem] = Field(
+        min_length=1,
+        max_length=12,
+        description="Tecnologías, frameworks y servicios usados en el desarrollo de la fase.",
+    )
     hours: int = Field(ge=1, le=2000)
     cost_eur: int = Field(ge=0, le=500_000)
     risks_notes: str | None = Field(default=None, max_length=500)
@@ -27,9 +36,10 @@ class EstimationResult(BaseModel):
     reasoning: str = Field(
         min_length=1,
         description=(
-            "Markdown en español: justificación del porqué de las decisiones "
-            "(número/tipo de fases, stack/tecnología, duración por fase, coste, "
-            "supuestos y trade-offs). No es chain-of-thought ni proceso interno."
+            "Markdown en español: cadena de razonamiento que explica cómo se llegó "
+            "a summary y phases (por qué N fases, por qué el stack de cada fase, "
+            "por qué las horas de cada fase). No repite listas de tecnologías "
+            "(están en phases[].stack), ni totales de coste, duración ni tarifas."
         ),
     )
 

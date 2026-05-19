@@ -37,7 +37,6 @@ class EstimationResponse(BaseModel):
     model: str
     provider: str
     usage: TokenUsageResponse
-    usage_available: bool
     cache_hit: bool
     finish_reason: str
     cost_usd: float

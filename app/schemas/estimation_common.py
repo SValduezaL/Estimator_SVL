@@ -10,9 +10,10 @@ LOW_CONFIDENCE_THRESHOLD = 40
 OUT_OF_SCOPE_PREFIX = "[FUERA_DE_ALCANCE]"
 
 REASONING_BOUNDS: dict[str, tuple[int, int]] = {
-    "summary": (80, 400),
-    "medium": (150, 900),
-    "detailed": (300, 2400),
+    # Límites de ``reasoning`` (CoT de decisiones). El máximo es orientativo (truncado si excede).
+    "summary": (100, 700),
+    "medium": (200, 1400),
+    "detailed": (400, 4000),
 }
 
 

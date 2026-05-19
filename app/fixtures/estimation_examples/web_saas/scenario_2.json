@@ -5,23 +5,26 @@
     {
       "name": "Identidad",
       "deliverable": "SSO SAML y provisión de usuarios partner",
+      "stack": ["Keycloak", "SAML 2.0", "Node.js", "PostgreSQL"],
       "hours": 28,
       "cost_eur": 1680
     },
     {
       "name": "Integraciones",
       "deliverable": "API leads y webhooks hacia CRM",
+      "stack": ["REST API", "Salesforce API", "RabbitMQ", "OpenAPI"],
       "hours": 32,
       "cost_eur": 1920
     },
     {
       "name": "Analytics",
       "deliverable": "Dashboard de embudo y export CSV",
+      "stack": ["React", "Recharts", "PostgreSQL", "CSV export"],
       "hours": 24,
       "cost_eur": 1440
     }
   ],
   "total_duration_weeks": 8,
   "total_cost_eur": 5040,
-  "reasoning": "## Decisiones de alcance\nDos integraciones externas justifican una fase dedicada frente a mezclarlas con el dashboard.\n\n**SSO SAML** reduce fricción B2B frente a OAuth social; el esfuerzo extra está en metadatos y rotación de certificados.\n\n**8 semanas** incluyen buffer para pruebas de integración con el CRM del cliente."
+  "reasoning": "## División en fases\nDos integraciones externas justifican una fase dedicada: mezclarlas con el dashboard retrasaría pruebas de contrato con el CRM.\n\n## Stack por fase\nIdentidad concentra metadatos SAML y rotación de certificados; integraciones aisla colas y reintentos hacia CRM; analytics depende de eventos ya normalizados.\n\n## Esfuerzo por fase\nIntegraciones lleva más horas por mapeos y entornos sandbox del cliente; identidad es sensible a IdP desconocido; analytics es más predecible una vez definido el embudo."
 }

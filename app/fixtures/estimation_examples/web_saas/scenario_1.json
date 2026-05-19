@@ -5,6 +5,7 @@
     {
       "name": "Fundaciones",
       "deliverable": "Auth, RBAC y modelo tenant/planes",
+      "stack": ["FastAPI", "PostgreSQL", "JWT", "Alembic"],
       "hours": 22,
       "cost_eur": 1320,
       "risks_notes": "Aislamiento de datos por tenant"
@@ -12,6 +13,7 @@
     {
       "name": "Cobros",
       "deliverable": "Integración pasarela y webhooks idempotentes",
+      "stack": ["Stripe API", "FastAPI", "Redis", "HMAC webhooks"],
       "hours": 30,
       "cost_eur": 1800,
       "risks_notes": "Reintentos y firma HMAC"
@@ -19,11 +21,12 @@
     {
       "name": "Producto",
       "deliverable": "API OpenAPI y panel React de onboarding",
+      "stack": ["React", "TypeScript", "OpenAPI", "FastAPI"],
       "hours": 38,
       "cost_eur": 2280
     }
   ],
   "total_duration_weeks": 7,
   "total_cost_eur": 5400,
-  "reasoning": "## Por qué tres fases\nSeparé fundaciones, cobros y producto para acotar el riesgo de la pasarela antes del panel.\n\n**Stack:** FastAPI, PostgreSQL y React por time-to-market y contratación habitual en SaaS B2B.\n\n**Coste y plazo:** 90 h repartidas en 7 semanas con full-stack senior y frontend mid; el coste cuadra con tarifa implícita de 60 EUR/h."
+  "reasoning": "## División en fases\nSeparé fundaciones, cobros y producto porque la pasarela concentra incertidumbre contractual y de pruebas; cerrar webhooks antes del panel evita rehacer UX si cambia el proveedor.\n\n## Stack por fase\nEn fundaciones el modelo tenant y RBAC deben ir antes de cualquier cobro; en cobros prioricé idempotencia y colas; en producto el onboarding expone contratos ya estables.\n\n## Esfuerzo por fase\nCobros absorbe más horas por escenarios de fallo y firma; fundaciones son bloqueantes pero acotadas; producto incluye iteración de UX y documentación OpenAPI."
 }

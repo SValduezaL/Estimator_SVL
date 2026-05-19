@@ -68,8 +68,23 @@ def test_few_shots_follow_project_type() -> None:
 def test_detail_level_changes_reasoning_instructions() -> None:
     sys_s, _ = render_estimation_prompt(_make_request(detail_level=DetailLevel.SUMMARY))
     sys_d, _ = render_estimation_prompt(_make_request(detail_level=DetailLevel.DETAILED))
-    assert "80–400" in sys_s
-    assert "300–2400" in sys_d
+    assert "100–700" in sys_s
+    assert "400–4000" in sys_d
+
+
+def test_v3_system_documents_phases_stack() -> None:
+    system, _ = render_estimation_prompt(_make_request())
+    assert "<phases_stack>" in system
+    assert "phases[].stack" in system
+
+
+def test_example_json_includes_stack_per_phase() -> None:
+    env = build_estimation_jinja_environment()
+    raw = env.globals["example_json"]("web_saas", 1)
+    data = json.loads(raw)
+    for phase in data["phases"]:
+        assert isinstance(phase["stack"], list)
+        assert len(phase["stack"]) >= 1
 
 
 def test_example_json_filter_produces_valid_json() -> None:

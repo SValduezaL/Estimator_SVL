@@ -5,23 +5,26 @@
     {
       "name": "Modelo",
       "deliverable": "Reglas de turnos y validaciones",
+      "stack": [".NET 8", "Entity Framework", "SQL Server", "reglas de negocio"],
       "hours": 36,
       "cost_eur": 2160
     },
     {
       "name": "UI planificación",
       "deliverable": "Calendario drag-and-drop y conflictos",
+      "stack": ["Blazor", "FullCalendar", "SignalR", ".NET API"],
       "hours": 40,
       "cost_eur": 2400
     },
     {
       "name": "Despliegue",
       "deliverable": "SSO corporativo y formación",
+      "stack": ["Azure AD SSO", "IIS", "documentación", "formación onsite"],
       "hours": 12,
       "cost_eur": 720
     }
   ],
   "total_duration_weeks": 9,
   "total_cost_eur": 5280,
-  "reasoning": "## Complejidad de reglas\nLa fase modelo absorbe incertidumbre legal; sin ella el UI sería retrabajo.\n\n**Drag-and-drop** justifica frontend dedicado frente a grids simples.\n\n**9 semanas** asumen validación con RRHH antes del go-live."
+  "reasoning": "## División en fases\nLa fase modelo absorbe incertidumbre legal; sin reglas validadas el UI sería retrabajo. Despliegue al final para no bloquear prototipo.\n\n## Stack por fase\nModelo en stack ya usado por IT interno; UI planificación justifica componente rico de calendario; despliegue integra identidad corporativa.\n\n## Esfuerzo por fase\nModelo es la más incierta por RRHH; UI planificación es amplia por drag-and-drop y conflictos; despliegue es acotado con soporte funcional."
 }

@@ -5,23 +5,26 @@
     {
       "name": "Cliente móvil",
       "deliverable": "Flutter iOS/Android con escaneo y cola offline",
+      "stack": ["Flutter", "Dart", "SQLite local", "barcode scanner"],
       "hours": 48,
       "cost_eur": 2880
     },
     {
       "name": "Backend",
       "deliverable": "API sync incremental y resolución de conflictos",
+      "stack": ["FastAPI", "PostgreSQL", "Redis", "sync incremental"],
       "hours": 36,
       "cost_eur": 2160
     },
     {
       "name": "Lanzamiento",
       "deliverable": "Publicación stores y piloto en 5 tiendas",
+      "stack": ["App Store Connect", "Google Play", "TestFlight", "Firebase Crashlytics"],
       "hours": 16,
       "cost_eur": 960
     }
   ],
   "total_duration_weeks": 10,
   "total_cost_eur": 6000,
-  "reasoning": "## Por qué Flutter y tres fases\nUn solo codebase acota coste frente a nativo dual; la fase offline/sync concentra el riesgo técnico.\n\n**Duración:** 10 semanas por pruebas en dispositivos reales y certificación de stores.\n\n**Coste:** alineado con 100 h y tarifa de equipo móvil + backend."
+  "reasoning": "## División en fases\nUn solo codebase móvil acota coste frente a nativo dual; offline/sync concentra el riesgo técnico en una fase backend separada del cliente.\n\n## Stack por fase\nFlutter unifica UI y escaneo; el backend resuelve conflictos que no deben vivir solo en el dispositivo; lanzamiento aísla certificación de stores del desarrollo funcional.\n\n## Esfuerzo por fase\nCliente móvil lleva más horas por cola offline y pruebas en dispositivos; backend por resolución de conflictos; lanzamiento es menor pero con dependencias externas."
 }

@@ -5,23 +5,26 @@
     {
       "name": "Ingesta",
       "deliverable": "Extracción ERP y landing en object storage",
+      "stack": ["Python", "Airflow", "S3", "ERP ODBC"],
       "hours": 28,
       "cost_eur": 1680
     },
     {
       "name": "Transform",
       "deliverable": "dbt models y tests de calidad",
+      "stack": ["dbt", "Snowflake", "Great Expectations", "SQL"],
       "hours": 36,
       "cost_eur": 2160
     },
     {
       "name": "Operación",
       "deliverable": "Orquestación Airflow y alertas SLA",
+      "stack": ["Airflow", "PagerDuty", "SLA monitors", "Terraform"],
       "hours": 20,
       "cost_eur": 1200
     }
   ],
   "total_duration_weeks": 8,
   "total_cost_eur": 5040,
-  "reasoning": "## Por qué batch diario\nEl SLA de frescura acordado es T+1; streaming sería sobredimensionado.\n\n**dbt** centraliza reglas de negocio reproducibles frente a SQL ad hoc en notebooks.\n\n**8 semanas** con data engineer senior y soporte plataforma existente."
+  "reasoning": "## División en fases\nSLA T+1 justifica batch diario frente a streaming sobredimensionado. Transform separado de ingesta para validar calidad antes de exponer.\n\n## Stack por fase\nIngesta aterriza datos crudos; dbt centraliza reglas reproducibles; operación cierra alertas una vez conocidos los SLAs reales.\n\n## Esfuerzo por fase\nTransform es la más amplia por modelado y tests; ingesta depende de ERP estable; operación es menor pero con hardening de orquestación."
 }

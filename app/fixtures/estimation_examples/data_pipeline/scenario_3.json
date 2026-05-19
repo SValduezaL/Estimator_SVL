@@ -5,23 +5,26 @@
     {
       "name": "Feature store",
       "deliverable": "Online/offline store y API de serving",
+      "stack": ["Feast", "Redis", "Parquet", "FastAPI serving"],
       "hours": 48,
       "cost_eur": 2880
     },
     {
       "name": "Training",
       "deliverable": "Pipelines reproducibles y versionado modelos",
+      "stack": ["MLflow", "Kubeflow Pipelines", "Python", "S3 artifacts"],
       "hours": 40,
       "cost_eur": 2400
     },
     {
       "name": "MLOps",
       "deliverable": "Monitoreo drift y despliegue canario",
+      "stack": ["Evidently", "Kubernetes", "canary deploy", "Prometheus"],
       "hours": 32,
       "cost_eur": 1920
     }
   ],
   "total_duration_weeks": 14,
   "total_cost_eur": 7200,
-  "reasoning": "## Por qué feature store primero\nSin serving consistente los pipelines de entrenamiento no cerran el ciclo de valor.\n\n**Confianza moderada** por dependencia de calidad de datos históricos no auditados aún.\n\n**14 semanas** con ML engineer + plataforma data; MLOps al final para no bloquear experimentación."
+  "reasoning": "## División en fases\nSin serving consistente los pipelines no cierran el ciclo de valor. MLOps al final para no bloquear experimentación temprana.\n\n## Stack por fase\nFeature store unifica online/offline; training versiona artefactos; MLOps observa drift cuando hay tráfico real.\n\n## Esfuerzo por fase\nFeature store es la más amplia por API y consistencia; training depende de calidad histórica aún no auditada; MLOps requiere plataforma estable."
 }

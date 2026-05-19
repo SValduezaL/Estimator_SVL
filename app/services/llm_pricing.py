@@ -33,8 +33,24 @@ def provider_from_model(model: str) -> str:
     return "unknown"
 
 
+def resolve_model_costs(model: str) -> dict[str, float]:
+    """Resuelve tarifas para ids versionados (p. ej. ``gpt-4o-mini-2024-07-18``)."""
+    base = normalise_model_name(model)
+    if base in MODEL_COSTS:
+        return MODEL_COSTS[base]
+    if model in MODEL_COSTS:
+        return MODEL_COSTS[model]
+    best_key = ""
+    best: dict[str, float] | None = None
+    for key, costs in MODEL_COSTS.items():
+        if base == key or base.startswith(f"{key}-"):
+            if len(key) > len(best_key):
+                best_key = key
+                best = costs
+    return best or {"input": 0.0, "output": 0.0}
+
+
 def estimate_cost_usd(model: str, tokens_in: int, tokens_out: int) -> float:
     """Estima coste USD a partir de tokens y ``MODEL_COSTS``."""
-    base = normalise_model_name(model)
-    costs = MODEL_COSTS.get(base) or MODEL_COSTS.get(model) or {"input": 0.0, "output": 0.0}
+    costs = resolve_model_costs(model)
     return round((tokens_in * costs["input"] + tokens_out * costs["output"]) / 1_000_000, 6)

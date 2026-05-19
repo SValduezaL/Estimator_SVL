@@ -5,23 +5,26 @@
     {
       "name": "Descubrimiento",
       "deliverable": "Mapa de dependencias y contratos de API",
+      "stack": ["PHP legacy", "OpenAPI", "diagramas C4", "Postman"],
       "hours": 40,
       "cost_eur": 2400
     },
     {
       "name": "Strangler checkout",
       "deliverable": "Nuevo servicio de checkout detrás de feature flag",
+      "stack": ["Python", "FastAPI", "PostgreSQL", "feature flags"],
       "hours": 56,
       "cost_eur": 3360
     },
     {
       "name": "Observabilidad",
       "deliverable": "Trazas, métricas y runbooks de rollback",
+      "stack": ["OpenTelemetry", "Prometheus", "Grafana", "runbooks"],
       "hours": 24,
       "cost_eur": 1440
     }
   ],
   "total_duration_weeks": 14,
   "total_cost_eur": 7200,
-  "reasoning": "## Por qué strangler en checkout\nEs el bounded context con mayor ROI y menor blast radius frente a reescribir catálogo completo.\n\n**Riesgo:** la confianza es moderada por deuda desconocida en el monolito; se asume documentación parcial del cliente.\n\n**14 semanas** reflejan doble mantenimiento temporal y pruebas de regresión en pagos."
+  "reasoning": "## División en fases\nCheckout es el bounded context con mayor ROI y menor blast radius; el descubrimiento reduce sorpresas del monolito antes de cortar tráfico.\n\n## Stack por fase\nDescubrimiento documenta el legado sin reescribirlo; strangler usa servicios nuevos detrás de flags; observabilidad permite rollback seguro durante doble mantenimiento.\n\n## Esfuerzo por fase\nStrangler concentra la mayor carga por regresión en pagos; descubrimiento es amplio por deuda desconocida; observabilidad es acotada pero crítica para operación."
 }
