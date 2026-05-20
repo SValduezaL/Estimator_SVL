@@ -1,36 +1,79 @@
 # Estimador CAG
 
-FastAPI + Streamlit para estimar esfuerzo de desarrollo a partir de una **descripción estructurada del proyecto** (tipo y nivel de detalle). El backend inyecta contexto CAG con **plantillas Jinja2 v3** y few-shot JSON, aplica **guardrails multicapa** (defense-in-depth), genera un **`EstimationResult` validado** vía **Instructor + LiteLLM**, y responde en JSON con métricas. Caché Redis opcional, fallback/reintentos, observabilidad structlog y coste por tokens.
+FastAPI + Streamlit para estimar esfuerzo de desarrollo a partir de una **descripción estructurada del proyecto** (tipo y nivel de detalle). El backend inyecta contexto CAG con **plantillas Jinja2 v3** y few-shot JSON, aplica **guardrails multicapa** (defense-in-depth), genera un **`EstimationResult` validado** vía **Instructor + LiteLLM**, y responde en JSON con métricas.
+
+Incluye **memoria conversacional** multi-turno (`session_id`: historial con ventana deslizante + `project_metadata` vía extractor LLM) y una **UI Streamlit** modular (chat, inspección de memoria, costes y observabilidad). Caché Redis opcional, fallback/reintentos, structlog y coste por tokens.
+
+## Inicio rápido (desarrollo local)
+
+```bash
+cp .env.example .env          # claves OpenAI/Anthropic, LLM_MODEL, etc.
+uv sync --dev
+uv run python -m uvicorn app.main:app --reload   # terminal 1 → http://127.0.0.1:8000
+uv run streamlit run streamlit_app.py            # terminal 2 → UI (ESTIMATOR_API_BASE_URL)
+```
+
+En la UI: **Nueva sesión** (sidebar) → escribe en el chat → revisa pestañas **Memoria**, **Costes** y **Observabilidad**.
 
 ## Arquitectura
 
 ```
-app/
-├── routers/        # POST /api/v1/estimate (respuesta JSON)
-├── cache/          # Caché exacta v2 + semántica (redisvl), orquestador, embeddings
-├── services/       # llm_service, llm_wrapper, llm_pricing, structured_llm
-├── guardrails/     # Defense-in-depth: input, output, moderation, injection, PII, policies
-├── prompts/        # Bundles Jinja2 versionados (CAG): registry, loader, estimation/v3
-├── schemas/        # request/output/API (estimation_request, estimation_output, estimation.py)
-├── logging/        # structlog: config, middleware X-Request-ID, redacción, handlers
-├── fixtures/       # Datos de prueba y few-shot JSON (estimation_examples/)
-├── dependencies.py # FastAPI: EstimationCacheOrchestrator, LLMWrapper, moderación OpenAI
-└── config.py       # Pydantic BaseSettings + .env (LLM + guardrails)
-streamlit_app.py    # Formulario + cliente HTTP JSON hacia la API
+app/                              # API FastAPI
+├── routers/
+│   ├── estimations.py            # POST /api/v1/estimate
+│   └── sessions.py               # POST /api/v1/sessions, GET /api/v1/sessions/{id}
+├── memory/                       # Sesiones, historial, metadata (store en proceso)
+├── cache/                        # Caché exacta v2 + semántica (redisvl)
+├── services/                     # llm_wrapper, structured_llm, llm_pricing, …
+├── guardrails/                   # Defense-in-depth (input/output, moderation, PII, …)
+├── prompts/                      # Bundles Jinja2 v3 (CAG)
+├── schemas/                      # estimation_*, session (SessionDetailResponse)
+├── logging/                      # structlog + X-Request-ID
+├── fixtures/                     # Few-shot JSON
+├── dependencies.py
+└── config.py
+
+frontend/                         # UI Streamlit modular
+├── app.py                        # Layout principal (5 pestañas)
+├── api/                          # SessionClient, EstimationClient, métricas
+├── state/                        # session_state, ui_state (st.session_state)
+├── components/
+│   ├── chat/                     # Burbujas, chat_input, sidebar sesiones
+│   ├── memory/                   # project_metadata, diff, trazas extractor
+│   ├── metrics/                  # Dashboard costes, gráficos, tabla
+│   ├── observability/            # Consola técnica (payloads, caché)
+│   ├── estimation/               # Fases, reasoning
+│   ├── prompts/                  # Preview Jinja2 local
+│   └── common/                   # stat_card, badges, errores
+├── styles/                       # CSS enterprise + theme
+└── utils/                        # formatting, cost_utils, charts
+
+streamlit_app.py                  # Launcher → frontend.app.run_app()
+
+tests/
+├── conversational_memory/        # Backend: store, TTL, extractor, prompts
+├── frontend/                     # Clientes API, agregaciones, diffs (sin runtime ST)
+├── guardrails/
+└── cache/
 ```
 
 ### Pipeline de una estimación
+
+**Sin `session_id`** (stateless, caché Redis si está configurada):
 
 ```
 POST /api/v1/estimate
   │
   ├─ L1  Pydantic (EstimationRequest: longitud, enums)
   ├─ L2  Input guardrails (moderation → injection → PII)
-  ├─ L3  Render Jinja2 v3 + validación de prompts
-  ├─ L4  Instructor + LiteLLM → EstimationResult (schema)
-  ├─ L5  Output guardrails (validadores semánticos + filtros)
+  ├─ L3  Caché (exact → semantic) o miss
+  ├─ L4  Render Jinja2 v3 + validación de prompts
+  ├─ L5  Instructor + LiteLLM → EstimationResult (schema)
+  ├─ L6  Output guardrails (validadores semánticos + filtros)
   └─     EstimationResponse (JSON + métricas)
 ```
+
+**Con `session_id`:** mismo flujo, más carga/actualización de sesión, historial en el LLM, extractor de metadata y `skip_cache=true` (ver [Memoria conversacional](#memoria-conversacional-appmemory)).
 
 Módulos clave en `app/services/`:
 
@@ -96,11 +139,112 @@ En `dev`, el detalle del 400 puede incluir el mensaje interno; en `staging`/`pro
 
 **Tests:** `tests/guardrails/` (unitarios, integración, regresión de ataques, snapshots). Los tests globales usan `guardrails_enabled=false` en `conftest`; la suite de guardrails activa flags estrictos.
 
+### Memoria conversacional (`app/memory/`)
+
+Sesiones multi-turno con **historial** y **metadata de proyecto** separados explícitamente. La metadata son hechos destilados que sobreviven al truncado del historial; el historial es el registro bruto user/assistant. **No** se mezclan ni se resume el historial: solo ventana deslizante. La actualización de metadata es **exclusivamente** vía extractor LLM (OpenAI Responses API + JSON schema); sin heurísticas, regex ni extracción por reglas.
+
+| Módulo | Responsabilidad |
+|---|---|
+| `models.py` | `ProjectMetadata`, `Message`, `Session` (Pydantic, validación de tamaños) |
+| `store.py` | Store en proceso `SESSIONS` (sin Redis/BBDD/ficheros), TTL, CRUD |
+| `extractor.py` | `update_metadata_llm()` — Responses API, salida `ProjectMetadata` |
+| `service.py` | Ventana deslizante, historial → mensajes LLM, persistencia de turnos |
+| `constants.py` | `SESSION_TTL_HOURS=24`, `MAX_HISTORY_TURNS=6` |
+| `exceptions.py` | `SessionNotFoundError`, `SessionExpiredError`, `MetadataExtractionError` |
+
+**Persistencia actual:** solo memoria de proceso (`dict[str, Session]`). Preparado para sustituir el store por Redis/BBDD sin cambiar modelos ni contrato HTTP.
+
+#### Modelo de sesión
+
+```
+Session
+├── session_id          # UUID
+├── history             # list[Message]  — user/assistant, truncado por sliding window
+├── project_metadata    # ProjectMetadata — hechos persistentes (inyectados en system prompt)
+├── created_at
+└── updated_at          # base del TTL (inactividad)
+```
+
+`ProjectMetadata` (campos opcionales): `project_name`, `assumed_team_size`, `mentioned_technologies`, `agreed_scope`, `explicit_constraints`, `rejected_options`.
+
+#### Pipeline con sesión (`session_id` en `EstimationRequest`)
+
+```mermaid
+flowchart TD
+    A[POST /api/v1/estimate + session_id] --> B[Input guardrails]
+    B --> C[get_session — 404 / 410 si falta o expiró]
+    C --> D[Render system.j2 con project_metadata]
+    D --> E[Mensajes: system + historial ventana + user actual]
+    E --> F[LLM principal Instructor — skip_cache]
+    F --> G[Extractor LLM → ProjectMetadata actualizado]
+    G --> H[Append turno user/assistant + sliding window]
+    H --> I[update_session en SESSIONS]
+    I --> J[EstimationResponse]
+```
+
+| Paso | Dónde | Qué ocurre |
+|------|--------|------------|
+| 1 | Router | Validación Pydantic + input guardrails (igual que sin sesión). |
+| 2 | `store.get_session()` | Carga sesión; si `updated_at` supera `SESSION_TTL_HOURS`, expira y se elimina (**410**). |
+| 3 | `loader.render_estimation_prompt(..., project_metadata=…)` | Bloque `<project_metadata>` en `estimation/v3/system.j2` + instrucciones de autoridad. |
+| 4 | `llm_wrapper.generate_structured(..., conversation_history=…)` | System + últimos `MAX_HISTORY_TURNS` turnos + mensaje user de la petición. |
+| 5 | `extractor.update_metadata_llm()` | Tras la estimación, fusiona hechos del turno (user + JSON assistant) en metadata. |
+| 6 | `service.persist_estimation_turn()` | Añade turno al historial, trunca, persiste metadata y sesión. |
+
+**Caché:** si hay `session_id`, `skip_cache=true` (el contexto conversacional invalida hits exactos/semánticos por descripción sola).
+
+**Reset explícito:** `POST /api/v1/sessions` crea una sesión vacía nueva; no reutiliza memoria de sesiones anteriores.
+
+#### Inyección en el prompt
+
+En `app/prompts/estimation/v3/system.j2`, tras `<estimator_identity>`, se renderiza `<project_metadata>` solo con campos poblados. Instrucción fija: tratar metadata como hechos establecidos y no contradecirlos salvo revisión explícita del usuario.
+
+El loader acepta `project_metadata: ProjectMetadata | None` en `render_estimation_prompt()`.
+
+#### Constantes y TTL
+
+| Constante | Valor | Efecto |
+|---|---|---|
+| `SESSION_TTL_HOURS` | `24` | Expiración por inactividad (`updated_at`) |
+| `MAX_HISTORY_TURNS` | `6` | Máximo de turnos user+assistant conservados |
+
+- `cleanup_expired_sessions()` purga sesiones vencidas de forma programática.
+- Al cargar una sesión expirada: **410 Gone**, entrada eliminada del store.
+
+#### Códigos HTTP (sesión)
+
+| Situación | HTTP |
+|---|---|
+| `session_id` inexistente | **404** |
+| Sesión expirada (TTL) | **410** |
+| Fallo del extractor LLM | **502** (`Metadata extraction failed`) |
+
+#### Eventos structlog (`log_category=business` / `technical`)
+
+| Evento | Cuándo |
+|---|---|
+| `session_created` / `session_loaded` / `session_updated` / `session_deleted` | Ciclo de vida en store |
+| `session_expired` / `session_expired_cleanup` | TTL al leer o en limpieza |
+| `history_truncated` | Tras aplicar ventana deslizante |
+| `metadata_extraction_started` / `completed` / `failed` | Extractor LLM |
+| `metadata_revised` | Metadata cambió tras un turno |
+
+**Tests:** `tests/conversational_memory/` — store, ventana, extractor (mock), revisión de hechos, inyección en prompt, TTL, reset vía `POST /sessions`, `GET /sessions/{id}`, integración con `/estimate`.
+
+#### API de sesiones (contratos)
+
+| Método | Respuesta | Contenido |
+|--------|-----------|-----------|
+| `POST /api/v1/sessions` | `SessionCreateResponse` | `{ "session_id": "uuid" }` |
+| `GET /api/v1/sessions/{session_id}` | `SessionDetailResponse` | `session_id`, `history[]`, `project_metadata`, `created_at`, `updated_at` |
+
+La UI Streamlit usa **GET** tras cada estimación para sincronizar `project_metadata` y construir diffs de memoria sin heurísticas en el cliente.
+
 ## Requisitos
 
 - Python 3.11+
 - `uv` instalado
-- API key de OpenAI o Anthropic
+- API key de OpenAI o Anthropic (OpenAI también para el extractor de metadata si usas `session_id`)
 
 ## Instalación
 
@@ -211,8 +355,12 @@ La API usa **structlog** (`app/logging/`) con salida a **stdout** (Docker/Kubern
 
 | Evento | Categoría | Cuándo |
 |---|---|---|
-| `estimation_requested` | business | Inicio `POST /estimate` |
+| `estimation_requested` | business | Inicio `POST /estimate` (incluye `session_id` si aplica) |
 | `estimation_completed` | business | Éxito con métricas |
+| `session_created` / `session_loaded` / `session_updated` | business | Memoria conversacional |
+| `session_expired` | business | TTL al cargar sesión |
+| `history_truncated` | business | Ventana deslizante aplicada |
+| `metadata_extraction_*` / `metadata_revised` | technical / business | Extractor LLM de metadata |
 | `estimation_failed` | business | Fallo no recuperable |
 | `estimation_validation_failed` | business | `ReasoningLengthError` |
 | `estimation_prompt_rendered` | technical | Tras Jinja2 |
@@ -285,9 +433,20 @@ uv sync --dev
 pytest
 # Solo guardrails:
 pytest tests/guardrails -q
+# Solo memoria conversacional:
+pytest tests/conversational_memory -q
+# Solo frontend (utilidades y clientes API):
+pytest tests/frontend -q
 ```
 
 Algunos tests importan `app.main` y disparan la validación de `Settings`: necesitas un `.env` coherente (por ejemplo `OPENAI_API_KEY` si `LLM_PROVIDER=openai`). Los tests del endpoint simulan el LLM con `monkeypatch`; `tests/guardrails/` cubre moderación (mock), injection, PII, políticas, integración 400 y regresión de ataques.
+
+| Suite | Qué cubre |
+|-------|-----------|
+| `tests/conversational_memory/` | Store, TTL, ventana, extractor, prompt metadata, `GET`/`POST` sesiones |
+| `tests/frontend/` | Clientes HTTP, agregación de costes, diffs metadata, parsing métricas |
+| `tests/guardrails/` | Pipelines input/output, moderación, ataques |
+| `tests/cache/` | Exacta, semántica, orquestador |
 
 ## Servicio LLM (CAG + Instructor + guardrails)
 
@@ -305,6 +464,9 @@ Definido en `app/schemas/estimation_request.py`:
 | `description` | `str` | 20–2000 caracteres |
 | `project_type` | enum | `mobile_app`, `web_saas`, `internal_tool`, `data_pipeline` |
 | `detail_level` | enum | `summary`, `medium`, `detailed` (afecta longitud de `reasoning` en el prompt) |
+| `session_id` | `str \| null` | Opcional. Activa historial + metadata; desactiva caché Redis para esa petición |
+
+Sin `session_id` el comportamiento es el de siempre (stateless, caché según `REDIS_URL`).
 
 ### Contrato de salida (`EstimationResponse`)
 
@@ -316,6 +478,30 @@ Definido en `app/schemas/estimation_request.py`:
 | `model`, `provider`, `usage`, `cache_hit`, `cost_usd`, … | | Métricas operativas |
 
 `EstimationResult` (en `app/schemas/estimation_output.py`) incluye validadores de negocio (suma de `cost_eur`, prefijo si baja confianza, etc.).
+
+#### Métricas extendidas (opcional, UI preparada)
+
+El frontend interpreta un bloque opcional en la respuesta de estimación:
+
+```json
+{
+  "result": { "…": "…" },
+  "cost_usd": 0.012,
+  "usage": { "input_tokens": 100, "output_tokens": 50, "total_tokens": 150 },
+  "metrics": {
+    "costs": {
+      "estimation_usd": 0.012,
+      "memory_extraction_usd": 0.004,
+      "guardrails_usd": 0.001,
+      "cache_embedding_usd": 0.000
+    },
+    "tokens": { "estimation": { "input": 100, "output": 50 } },
+    "latency": { "estimation_ms": 1200 }
+  }
+}
+```
+
+Si `metrics` no está presente, la UI usa `cost_usd` de la estimación y deriva el diff de memoria vía `GET /sessions/{id}`.
 
 ### Caché Redis (exacta + semántica)
 
@@ -437,13 +623,48 @@ El **embedding** calculado en el lookup semántico (miss) se reutiliza en `store
 - Eventos semánticos: `semantic_cache_lookup`, `semantic_cache_hit`, `semantic_cache_miss`, `semantic_cache_store`, etc. (tabla de logging más arriba en este README).
 - Contadores in-memory: `get_cache_metrics()` en `app/cache/telemetry.py` (exportables a Prometheus).
 
-### Interfaz Streamlit
+### Interfaz Streamlit (`frontend/`)
 
-`streamlit_app.py` actúa como cliente HTTP de la API. Envía `POST /api/v1/estimate` con el cuerpo JSON de `EstimationRequest`:
+`streamlit run streamlit_app.py` → `frontend/app.py`. Copiloto **multi-sesión**, layout **wide**, CSS custom (`frontend/styles/css.py`).
 
-- Formulario (`st.form`) con descripción y selectores alineados a los enums del backend.
-- Tabla de fases, métricas y `st.markdown` sobre `result.reasoning`.
-- Panel lateral: **Cómo funciona**, **Prompt CAG**, **Servidor**, **Métricas** (tokens, tiempo, caché, `prompt_version`, coste y JSON completo).
+#### Layout
+
+```
+┌─ Sidebar ─────────────────┐  ┌─ Main (tabs) ────────────────────────────────┐
+│ Nueva sesión              │  │ [ Chat ] [ Memoria ] [ Costes ] [ Obs ] [ Prompt ] │
+│ Lista sesiones (activa)   │  │                                                │
+│ Renombrar / archivar      │  │  Contenido según pestaña                       │
+│ Coste sesión / global     │  │                                                │
+│ Estado Redis              │  │                                                │
+└───────────────────────────┘  └────────────────────────────────────────────────┘
+```
+
+| Pestaña | Función |
+|---------|---------|
+| **Chat** | Burbujas user/assistant, formulario de mensaje (`text_area` + enviar; sin `st.chat_input` para evitar fallos de chunks JS en Windows), badges y expanders técnicos |
+| **Memoria** | Cards de `project_metadata`, timeline de snapshots, diff antes/después, trazas del extractor (input/output/diff) |
+| **Costes** | Total global y por sesión, desglose por tipo de llamada, gráficos tokens/latencia, tabla filtrable del `call_log` |
+| **Observabilidad** | Selector de eventos, tabs request/response/caché/guardrails/memoria (consola tipo debug) |
+| **Prompt** | Render local Jinja2 (`render_estimation_prompt`) con opción de inyectar metadata de la sesión activa |
+
+#### Clientes y estado
+
+| Capa | Rol |
+|------|-----|
+| `frontend/api/` | HTTP con reintentos, `ApiError`, header `X-Request-ID`; `parse_estimation_metrics()` soporta bloque opcional `metrics.costs.*` en la respuesta |
+| `frontend/state/session_state.py` | Registro local de sesiones, mensajes, `call_log`, `metadata_history`, `memory_traces` (persiste en `st.session_state`) |
+| `frontend/state/ui_state.py` | Pestaña activa, filtros de métricas |
+
+**Flujo de datos:**
+
+1. `POST /sessions` → guardar `session_id` en sidebar.
+2. Usuario envía mensaje → `POST /estimate` con `session_id`.
+3. `GET /sessions/{id}` antes/después del turno → diff de metadata en UI.
+4. Métricas de la respuesta se acumulan en `call_log` (estimation; memory/guardrails cuando la API exponga `metrics.costs`).
+
+**Correlación:** el frontend propaga y muestra `X-Request-ID` devuelto por la API (alineado con structlog del backend).
+
+**Tests:** `tests/frontend/` — clientes, agregaciones, diffs de metadata, parsing de métricas (sin ejecutar Streamlit).
 
 Para soportar nuevos LLM en el futuro:
 
@@ -464,6 +685,18 @@ Para extender guardrails:
 4. **Judge:** implementa `OutputJudge` y regístralo con `register_output_judge()`; activa `GUARDRAILS_JUDGE_ENABLED=true`.
 5. Tras cambios que alteren comportamiento en caché, incrementa `GUARDRAILS_VERSION` en `app/guardrails/config.py`.
 
+Para persistir memoria conversacional fuera de proceso:
+
+1. Implementa un backend alternativo manteniendo la interfaz de `app/memory/store.py` (`create_session`, `get_session`, `update_session`, …).
+2. Los modelos en `app/memory/models.py` y el flujo del router no requieren cambios.
+3. Ajusta TTL y limpieza según el almacén (Redis, PostgreSQL, etc.).
+
+Para evolucionar metadata o el extractor:
+
+1. Extiende `ProjectMetadata` en `models.py` (validadores de tamaño en el mismo archivo).
+2. Actualiza el bloque Jinja2 en `estimation/v3/system.j2` y el prompt en `extractor.py` (`EXTRACTION_PROMPT`).
+3. Añade tests en `tests/conversational_memory/`.
+
 ## Ejecutar API
 
 ```bash
@@ -472,11 +705,20 @@ uv run python -m uvicorn app.main:app --reload
 
 ## Ejecutar interfaz Streamlit
 
-Requiere que la API esté corriendo (en otro terminal o Docker). La URL base se configura con `ESTIMATOR_API_BASE_URL`.
+Requiere la **API en marcha** (host o Docker en `:8000`). Variables relevantes:
+
+| Variable | Uso |
+|----------|-----|
+| `ESTIMATOR_API_BASE_URL` | Base URL del cliente HTTP (default `http://localhost:8000`) |
+| Mismas claves que la API | Solo si usas preview local de prompts en la pestaña **Prompt** (Jinja2 en proceso) |
 
 ```bash
+# Con API local:
+export ESTIMATOR_API_BASE_URL=http://127.0.0.1:8000   # opcional si ya es el default
 uv run streamlit run streamlit_app.py
 ```
+
+Con Docker Compose, la API queda en `http://127.0.0.1:8000`; ejecuta Streamlit **en el host** apuntando a esa URL (el servicio `estimator` del compose no incluye Streamlit).
 
 ## Ejecutar con Docker Compose (desarrollo)
 
@@ -536,6 +778,46 @@ Cuando se agregue, la idea será:
 
 ## Endpoints
 
+### `POST /api/v1/sessions` — nueva sesión conversacional
+
+Crea una sesión vacía (`history=[]`, `project_metadata` por defecto). Respuesta:
+
+```json
+{ "session_id": "550e8400-e29b-41d4-a716-446655440000" }
+```
+
+Uso típico: obtener `session_id` al iniciar un hilo; reutilizarlo en cada `POST /estimate`; para **empezar de cero**, llamar de nuevo a `POST /sessions` (no reutilizar el id anterior).
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/v1/sessions"
+```
+
+### `GET /api/v1/sessions/{session_id}` — estado de sesión
+
+Devuelve historial y metadata actual (para sincronizar la UI o depurar memoria):
+
+```json
+{
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "history": [
+    { "role": "user", "content": "…" },
+    { "role": "assistant", "content": "{…}" }
+  ],
+  "project_metadata": {
+    "project_name": "CRM Acme",
+    "assumed_team_size": 3,
+    "mentioned_technologies": ["React", "PostgreSQL"],
+    "agreed_scope": null,
+    "explicit_constraints": [],
+    "rejected_options": []
+  },
+  "created_at": "2026-05-20T10:00:00",
+  "updated_at": "2026-05-20T10:05:00"
+}
+```
+
+Errores: **404** (no existe), **410** (TTL expirado).
+
 ### `POST /api/v1/estimate` — respuesta JSON
 
 Cuerpo JSON (`EstimationRequest`):
@@ -548,11 +830,24 @@ Cuerpo JSON (`EstimationRequest`):
 }
 ```
 
+Con memoria conversacional, añade `session_id` del paso anterior:
+
+```json
+{
+  "description": "Añadimos facturación recurrente con Stripe y roles de solo lectura.",
+  "project_type": "web_saas",
+  "detail_level": "medium",
+  "session_id": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
 Respuesta: **`application/json`** (`EstimationResponse`) con `result` (`EstimationResult`: fases, totales, `reasoning` en Markdown) y métricas (`prompt_version`, `usage`, `cache_hit`, `cost_usd`, etc.). Ver OpenAPI en `/docs`.
 
 **Errores guardrails (entrada):** HTTP 400 con cuerpo `{"detail": "...", "reason": "moderation"|"prompt_injection"|"pii"}`.
 
-Ejemplo con `curl`:
+**Errores de sesión:** 404 (id desconocido), 410 (TTL expirado), 502 (extractor de metadata).
+
+Ejemplo stateless con `curl`:
 
 ```bash
 curl -X POST "http://127.0.0.1:8000/api/v1/estimate" \
@@ -560,10 +855,27 @@ curl -X POST "http://127.0.0.1:8000/api/v1/estimate" \
   -d "{\"description\":\"CRM pequeño con auth, contactos y roles. MVP orientativo seis semanas. Texto extra para superar el mínimo de 20 caracteres.\",\"project_type\":\"web_saas\",\"detail_level\":\"medium\"}"
 ```
 
+Ejemplo conversacional (dos pasos):
+
+```bash
+SESSION=$(curl -s -X POST "http://127.0.0.1:8000/api/v1/sessions" | jq -r .session_id)
+
+curl -X POST "http://127.0.0.1:8000/api/v1/estimate" \
+  -H "Content-Type: application/json" \
+  -d "{\"description\":\"CRM con auth y contactos. Equipo de 3 devs. Stack React y PostgreSQL. Texto extra para validación.\",\"project_type\":\"web_saas\",\"detail_level\":\"medium\",\"session_id\":\"$SESSION\"}"
+
+curl -X POST "http://127.0.0.1:8000/api/v1/estimate" \
+  -H "Content-Type: application/json" \
+  -d "{\"description\":\"Añadimos integración Stripe y excluimos serverless. Texto extra para validación.\",\"project_type\":\"web_saas\",\"detail_level\":\"medium\",\"session_id\":\"$SESSION\"}"
+```
+
 ### Meta y salud
 
 | Método | Ruta | Descripción |
 |---|---|---|
+| `POST` | `/api/v1/sessions` | Crea sesión conversacional vacía (`session_id`) |
+| `GET` | `/api/v1/sessions/{session_id}` | Historial + `project_metadata` (sincronización UI) |
+| `POST` | `/api/v1/estimate` | Estimación estructurada (opcional `session_id`) |
 | `GET` | `/` | Info básica: nombre, versión, links a docs |
 | `GET` | `/version` | Versión de la API |
 | `GET` | `/health` | Estado de la aplicación |

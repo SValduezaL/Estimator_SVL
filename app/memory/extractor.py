@@ -46,9 +46,36 @@ Return ONLY valid JSON matching the ProjectMetadata schema.
 
 
 def _metadata_json_schema() -> dict[str, Any]:
-    schema = ProjectMetadata.model_json_schema()
-    schema.setdefault("additionalProperties", False)
-    return schema
+    """Schema compatible con OpenAI Responses ``json_schema`` + ``strict: true``."""
+    return {
+        "type": "object",
+        "properties": {
+            "project_name": {"type": ["string", "null"]},
+            "assumed_team_size": {"type": ["integer", "null"]},
+            "mentioned_technologies": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "agreed_scope": {"type": ["string", "null"]},
+            "explicit_constraints": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "rejected_options": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+        },
+        "required": [
+            "project_name",
+            "assumed_team_size",
+            "mentioned_technologies",
+            "agreed_scope",
+            "explicit_constraints",
+            "rejected_options",
+        ],
+        "additionalProperties": False,
+    }
 
 
 def _parse_response_output(response: Any) -> str:
@@ -129,7 +156,10 @@ async def update_metadata_llm(
             error_message=str(exc),
             exc_info=True,
         )
-        raise MetadataExtractionError("Metadata extraction LLM call failed") from exc
+        detail = str(exc) or type(exc).__name__
+        raise MetadataExtractionError(
+            f"Metadata extraction LLM call failed: {detail}"
+        ) from exc
 
     log.info(
         "metadata_extraction_completed",

@@ -7,6 +7,7 @@ from typing import Any
 import structlog
 
 from app.memory.constants import MAX_HISTORY_TURNS
+from app.memory.exceptions import MetadataExtractionError
 from app.memory.extractor import update_metadata_llm
 from app.memory.models import Message, ProjectMetadata, Session
 from app.memory.store import update_session
@@ -123,10 +124,19 @@ async def persist_estimation_turn(
     """Registra turno, actualiza metadata y persiste la sesión."""
     assistant_turn = result.model_dump_json()
     append_turn(session, user_content=user_turn, assistant_content=assistant_turn)
-    await refresh_metadata_from_turn(
-        session,
-        user_turn=user_turn,
-        assistant_turn=assistant_turn,
-        client=client,
-    )
+    try:
+        await refresh_metadata_from_turn(
+            session,
+            user_turn=user_turn,
+            assistant_turn=assistant_turn,
+            client=client,
+        )
+    except MetadataExtractionError as exc:
+        log.warning(
+            "metadata_extraction_degraded",
+            log_category="business",
+            session_id=session.session_id,
+            error_message=str(exc),
+            history_saved=True,
+        )
     return update_session(session)

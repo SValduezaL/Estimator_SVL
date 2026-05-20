@@ -25,11 +25,7 @@ from app.dependencies import (
 from app.guardrails import run_input_guardrails, run_output_guardrails, validate_rendered_prompts
 from app.guardrails.exceptions import GuardrailBlocked
 from app.logging.sync import run_sync_with_context
-from app.memory.exceptions import (
-    MetadataExtractionError,
-    SessionExpiredError,
-    SessionNotFoundError,
-)
+from app.memory.exceptions import SessionExpiredError, SessionNotFoundError
 from app.memory.service import (
     history_to_llm_messages,
     metadata_for_prompt,
@@ -219,21 +215,12 @@ async def create_estimation(
         raise HTTPException(status_code=502, detail="Structured estimation failed") from exc
 
     if session is not None:
-        try:
-            await persist_estimation_turn(
-                session,
-                user_turn=input_guarded.text,
-                result=result,
-                client=metadata_client,
-            )
-        except MetadataExtractionError as exc:
-            log.error(
-                "metadata_persist_failed",
-                log_category="business",
-                session_id=session.session_id,
-                error_message=str(exc),
-            )
-            raise HTTPException(status_code=502, detail="Metadata extraction failed") from exc
+        await persist_estimation_turn(
+            session,
+            user_turn=input_guarded.text,
+            result=result,
+            client=metadata_client,
+        )
 
     duration_ms = int((time.perf_counter() - start) * 1000)
 

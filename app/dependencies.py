@@ -76,9 +76,18 @@ def get_async_openai_client(
     key = settings.openai_api_key
     if _async_openai_client is None or _async_openai_client_key != key:
         try:
+            import certifi
+            import httpx
             from openai import AsyncOpenAI
 
-            _async_openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
+            http_client = httpx.AsyncClient(
+                verify=certifi.where(),
+                timeout=httpx.Timeout(120.0, connect=15.0),
+            )
+            _async_openai_client = AsyncOpenAI(
+                api_key=settings.openai_api_key,
+                http_client=http_client,
+            )
             _async_openai_client_key = key
         except Exception:
             _async_openai_client = None
