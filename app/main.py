@@ -6,7 +6,7 @@ from app.config import settings
 from app.logging.config import configure_logging
 from app.logging.exceptions import register_exception_handlers
 from app.logging.middleware import RequestContextMiddleware
-from app.routers import estimations
+from app.routers import estimations, sessions
 
 
 APP_VERSION = "0.1.0"
@@ -33,6 +33,7 @@ app.add_middleware(RequestContextMiddleware)
 register_exception_handlers(app)
 
 app.include_router(estimations.router)
+app.include_router(sessions.router)
 
 
 @app.get("/", tags=["meta"])

@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import time
+from dataclasses import replace
 from functools import partial
+from typing import Any
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
@@ -14,10 +16,26 @@ from app.cache import EstimationCacheOrchestrator
 from app.cache.orchestrator import build_cache_context
 from app.cache.types import CacheLookupResult
 from app.config import Settings, get_settings
-from app.dependencies import get_cache_orchestrator, get_llm_wrapper, get_openai_moderation_client
+from app.dependencies import (
+    get_async_openai_client,
+    get_cache_orchestrator,
+    get_llm_wrapper,
+    get_openai_moderation_client,
+)
 from app.guardrails import run_input_guardrails, run_output_guardrails, validate_rendered_prompts
 from app.guardrails.exceptions import GuardrailBlocked
 from app.logging.sync import run_sync_with_context
+from app.memory.exceptions import (
+    MetadataExtractionError,
+    SessionExpiredError,
+    SessionNotFoundError,
+)
+from app.memory.service import (
+    history_to_llm_messages,
+    metadata_for_prompt,
+    persist_estimation_turn,
+)
+from app.memory.store import get_session
 from app.prompts.registry import DEFAULT_ESTIMATION_BUNDLE
 from app.schemas.estimation import EstimationRequest, EstimationResponse, TokenUsageResponse
 from app.services.llm_service import build_estimation_cache_inputs
@@ -46,6 +64,7 @@ async def create_estimation(
     wrapper: LLMWrapper = Depends(get_llm_wrapper),
     orchestrator: EstimationCacheOrchestrator | None = Depends(get_cache_orchestrator),
     openai_client=Depends(get_openai_moderation_client),
+    metadata_client: Any | None = Depends(get_async_openai_client),
 ) -> EstimationResponse:
     """Genera una estimación estructurada y devuelve ``result`` + métricas."""
     log.info(
@@ -53,8 +72,18 @@ async def create_estimation(
         log_category="business",
         project_type=request.project_type.value,
         detail_level=request.detail_level.value,
+        session_id=request.session_id,
         description_sha256=hashlib.sha256(request.description.encode("utf-8")).hexdigest(),
     )
+
+    session = None
+    if request.session_id:
+        try:
+            session = get_session(request.session_id)
+        except SessionNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except SessionExpiredError as exc:
+            raise HTTPException(status_code=410, detail=str(exc)) from exc
 
     try:
         input_guarded = run_input_guardrails(
@@ -67,9 +96,13 @@ async def create_estimation(
 
     request_for_llm = request.model_copy(update={"description": input_guarded.text})
     opts = request.to_generation_options()
+    if session is not None:
+        opts = replace(opts, skip_cache=True)
     bundle = DEFAULT_ESTIMATION_BUNDLE
     model_used = opts.model if opts.model is not None else settings.llm_model
     max_tokens = opts.max_tokens if opts.max_tokens is not None else settings.max_tokens
+
+    prompt_metadata = metadata_for_prompt(session.project_metadata) if session else None
 
     cache_ctx = build_cache_context(
         request=request_for_llm,
@@ -84,7 +117,7 @@ async def create_estimation(
     start = time.perf_counter()
     cache_embedding: list[float] | None = None
 
-    if orchestrator is not None:
+    if orchestrator is not None and session is None:
         lookup = orchestrator.lookup(cache_ctx)
         cache_embedding = lookup.embedding
         if lookup.hit and lookup.payload is not None:
@@ -106,6 +139,7 @@ async def create_estimation(
                 duration_ms=duration_ms,
                 model=model_used,
                 phase_count=len(result.phases),
+                session_id=request.session_id,
             )
             return EstimationResponse(
                 result=result,
@@ -125,6 +159,7 @@ async def create_estimation(
             settings=settings,
             request=request_for_llm,
             bundle=bundle,
+            project_metadata=prompt_metadata,
         )
     )
 
@@ -140,6 +175,8 @@ async def create_estimation(
             message=prompt_check.message,
         )
         raise HTTPException(status_code=400, detail="Request could not be processed")
+
+    conversation_history = history_to_llm_messages(session.history) if session else None
 
     loop = asyncio.get_running_loop()
     try:
@@ -157,8 +194,9 @@ async def create_estimation(
                 max_tokens=max_tokens,
                 thinking_budget=thinking_budget,
                 skip_cache=opts.skip_cache,
-                cache_context=cache_ctx,
+                cache_context=cache_ctx if session is None else None,
                 cache_embedding=cache_embedding,
+                conversation_history=conversation_history,
             ),
         )
     except ReasoningLengthError as exc:
@@ -180,6 +218,23 @@ async def create_estimation(
         )
         raise HTTPException(status_code=502, detail="Structured estimation failed") from exc
 
+    if session is not None:
+        try:
+            await persist_estimation_turn(
+                session,
+                user_turn=input_guarded.text,
+                result=result,
+                client=metadata_client,
+            )
+        except MetadataExtractionError as exc:
+            log.error(
+                "metadata_persist_failed",
+                log_category="business",
+                session_id=session.session_id,
+                error_message=str(exc),
+            )
+            raise HTTPException(status_code=502, detail="Metadata extraction failed") from exc
+
     duration_ms = int((time.perf_counter() - start) * 1000)
 
     log.info(
@@ -193,6 +248,7 @@ async def create_estimation(
         phase_count=len(result.phases),
         reasoning_chars=len(result.reasoning),
         confidence_pct=result.confidence_pct,
+        session_id=request.session_id,
     )
 
     return EstimationResponse(
@@ -202,7 +258,7 @@ async def create_estimation(
         model=str(metrics.get("model", model_used)),
         provider=str(metrics["provider"]),
         usage=TokenUsageResponse(**metrics["usage"]),
-        cache_hit=bool(metrics["cache_hit"]),
+        cache_hit=bool(metrics.get("cache_hit")),
         finish_reason=str(metrics.get("finish_reason", "stop")),
         cost_usd=float(metrics["cost_usd"]),
         response_seconds=time.perf_counter() - start,

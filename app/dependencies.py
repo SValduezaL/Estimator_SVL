@@ -12,6 +12,9 @@ from app.config import Settings, get_settings
 from app.guardrails.pipeline import create_openai_client
 from app.services.llm_wrapper import LLMWrapper
 
+_async_openai_client: Any | None = None
+_async_openai_client_key: str | None = None
+
 _orchestrator: EstimationCacheOrchestrator | None = None
 _orchestrator_key: str | None = None
 
@@ -61,3 +64,23 @@ def get_openai_moderation_client(
     if not settings.guardrails_enabled or not settings.guardrails_moderation_enabled:
         return None
     return create_openai_client(settings)
+
+
+def get_async_openai_client(
+    settings: Settings = Depends(get_settings),
+) -> Any | None:
+    """Cliente OpenAI asíncrono para el extractor de metadata."""
+    global _async_openai_client, _async_openai_client_key
+    if not settings.openai_api_key:
+        return None
+    key = settings.openai_api_key
+    if _async_openai_client is None or _async_openai_client_key != key:
+        try:
+            from openai import AsyncOpenAI
+
+            _async_openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
+            _async_openai_client_key = key
+        except Exception:
+            _async_openai_client = None
+            _async_openai_client_key = None
+    return _async_openai_client

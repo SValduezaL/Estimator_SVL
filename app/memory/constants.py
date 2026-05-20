@@ -1,0 +1,11 @@
+"""Constantes de memoria conversacional."""
+
+from __future__ import annotations
+
+SESSION_TTL_HOURS = 24
+MAX_HISTORY_TURNS = 6
+
+MAX_METADATA_LIST_ITEMS = 30
+MAX_METADATA_STRING_LEN = 200
+MAX_AGREED_SCOPE_LEN = 2000
+MAX_LIST_ITEM_LEN = 500

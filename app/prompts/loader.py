@@ -14,6 +14,7 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from app.fixtures.estimation_examples import few_shot_json_block
 from app.prompts.registry import DEFAULT_ESTIMATION_BUNDLE, PromptBundle
+from app.memory.models import ProjectMetadata
 from app.schemas.estimation_common import ProjectType
 from app.schemas.estimation_request import EstimationRequest
 
@@ -58,6 +59,7 @@ def render_estimation_prompt(
     *,
     bundle: PromptBundle | None = None,
     version: str | None = None,
+    project_metadata: ProjectMetadata | None = None,
 ) -> tuple[str, str]:
     """Renderiza `system.j2` y `user.j2` para el caso de uso *estimation*.
 
@@ -89,12 +91,13 @@ def render_estimation_prompt(
 
     subdir = b.template_subdir
     env = _cached_estimation_environment()
-    ctx: dict[str, str] = {
+    ctx: dict[str, object] = {
         "description": request.description,
         "project_type": request.project_type.value,
         "detail_level": request.detail_level.value,
         "_prompt_bundle_version": subdir,
         "_examples_template": f"estimation/{subdir}/examples.j2",
+        "project_metadata": project_metadata,
     }
     if subdir in ("v1", "v2"):
         ctx["output_format"] = "line_items"

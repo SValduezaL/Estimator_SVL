@@ -401,15 +401,18 @@ class LLMWrapper:
         max_validation_retries: int = 2,
         cache_context: CacheContext | None = None,
         cache_embedding: list[float] | None = None,
+        conversation_history: list[dict[str, str]] | None = None,
     ) -> tuple[EstimationResult, dict[str, Any]]:
         """Genera ``EstimationResult`` validado vía Instructor + LiteLLM."""
         max_t = max_tokens if max_tokens is not None else self._settings.max_tokens
         cache_key_model = model_override or self._primary_model
 
-        messages = [
+        messages: list[dict[str, str]] = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message},
         ]
+        if conversation_history:
+            messages.extend(conversation_history)
+        messages.append({"role": "user", "content": user_message})
         log.info(
             "llm_structured_started",
             log_category="technical",

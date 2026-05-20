@@ -31,6 +31,10 @@ class EstimationRequest(BaseModel):
     )
     project_type: ProjectType
     detail_level: DetailLevel
+    session_id: str | None = Field(
+        default=None,
+        description="Identificador de sesión conversacional (historial + metadata)",
+    )
 
     def to_generation_options(self) -> GenerationOptions:
         return GenerationOptions(
