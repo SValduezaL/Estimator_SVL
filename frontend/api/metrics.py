@@ -45,9 +45,9 @@ def parse_estimation_metrics(
         "raw": dict(response),
     }
 
-    extended = response.get("metrics")
-    if isinstance(extended, dict):
-        costs = extended.get("costs") or {}
+    operations = response.get("operations")
+    if isinstance(operations, dict):
+        costs = operations.get("costs") or {}
         if isinstance(costs, dict):
             base["cost_breakdown"] = {
                 CALL_ESTIMATION: float(costs.get("estimation_usd", base["cost_usd"])),
@@ -55,21 +55,38 @@ def parse_estimation_metrics(
                 CALL_GUARDRAILS: float(costs.get("guardrails_usd", 0.0)),
                 CALL_CACHE_EMBEDDING: float(costs.get("cache_embedding_usd", 0.0)),
             }
-        tokens = extended.get("tokens")
-        if isinstance(tokens, dict):
-            base["tokens_breakdown"] = tokens
-        latency = extended.get("latency")
-        if isinstance(latency, dict):
-            base["latency_breakdown"] = latency
+        base["operations"] = operations
     else:
-        base["cost_breakdown"] = {
-            CALL_ESTIMATION: base["cost_usd"],
-            CALL_MEMORY_EXTRACTION: 0.0,
-            CALL_GUARDRAILS: 0.0,
-            CALL_CACHE_EMBEDDING: 0.0,
-        }
+        extended = response.get("metrics")
+        if isinstance(extended, dict):
+            costs = extended.get("costs") or {}
+            if isinstance(costs, dict):
+                base["cost_breakdown"] = {
+                    CALL_ESTIMATION: float(costs.get("estimation_usd", base["cost_usd"])),
+                    CALL_MEMORY_EXTRACTION: float(costs.get("memory_extraction_usd", 0.0)),
+                    CALL_GUARDRAILS: float(costs.get("guardrails_usd", 0.0)),
+                    CALL_CACHE_EMBEDDING: float(costs.get("cache_embedding_usd", 0.0)),
+                }
+            tokens = extended.get("tokens")
+            if isinstance(tokens, dict):
+                base["tokens_breakdown"] = tokens
+            latency = extended.get("latency")
+            if isinstance(latency, dict):
+                base["latency_breakdown"] = latency
+        else:
+            base["cost_breakdown"] = {
+                CALL_ESTIMATION: base["cost_usd"],
+                CALL_MEMORY_EXTRACTION: 0.0,
+                CALL_GUARDRAILS: 0.0,
+                CALL_CACHE_EMBEDDING: 0.0,
+            }
 
-    cache_source = response.get("cache_source") or extended.get("cache_source") if isinstance(extended, dict) else None
+    extended = response.get("metrics")
+    cache_source = response.get("cache_source")
+    if cache_source is None and isinstance(operations, dict):
+        cache_source = operations.get("cache_source")
+    if cache_source is None and isinstance(extended, dict):
+        cache_source = extended.get("cache_source")
     if cache_source:
         base["cache_source"] = str(cache_source)
     similarity = response.get("semantic_similarity")
@@ -130,3 +147,109 @@ def _metadata_diff(before: dict[str, Any], after: dict[str, Any]) -> dict[str, A
             else:
                 changes["modified"][key] = {"from": b_val, "to": a_val}
     return changes
+
+
+def total_cost_from_response(response: dict[str, Any]) -> float:
+    """Suma costes de todas las operaciones cuando la API expone ``operations``."""
+    operations = response.get("operations")
+    if isinstance(operations, dict):
+        costs = operations.get("costs") or {}
+        if isinstance(costs, dict):
+            return round(
+                sum(
+                    float(costs.get(key, 0.0))
+                    for key in (
+                        "estimation_usd",
+                        "memory_extraction_usd",
+                        "guardrails_usd",
+                        "cache_embedding_usd",
+                    )
+                ),
+                8,
+            )
+    return float(response.get("cost_usd", 0.0))
+
+
+def build_operation_call_log_entries(
+    response: dict[str, Any],
+    *,
+    timestamp: str,
+    session_id: str | None,
+    request_id: str | None,
+    turn_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Filas adicionales del call_log (memoria, guardrails, embedding) desde ``operations``."""
+    operations = response.get("operations")
+    if not isinstance(operations, dict):
+        return []
+
+    costs = operations.get("costs") or {}
+    if not isinstance(costs, dict):
+        costs = {}
+
+    mem_usage = operations.get("memory_extraction") or {}
+    if not isinstance(mem_usage, dict):
+        mem_usage = {}
+
+    entries: list[dict[str, Any]] = []
+    common = {
+        "timestamp": timestamp,
+        "session_id": session_id,
+        "request_id": request_id,
+        "turn_id": turn_id,
+        "operations": operations,
+    }
+
+    if operations.get("memory_extraction_executed"):
+        entries.append(
+            {
+                **common,
+                "call_type": CALL_MEMORY_EXTRACTION,
+                "endpoint": "internal/memory_extractor",
+                "model": mem_usage.get("model") or "gpt-4o-mini",
+                "input_tokens": int(mem_usage.get("input_tokens", 0)),
+                "output_tokens": int(mem_usage.get("output_tokens", 0)),
+                "total_tokens": int(mem_usage.get("total_tokens", 0)),
+                "cost_usd": float(costs.get("memory_extraction_usd", 0.0)),
+                "latency_ms": mem_usage.get("latency_ms"),
+                "degraded": bool(operations.get("memory_extraction_degraded")),
+            }
+        )
+
+    guardrails_on = bool(operations.get("guardrails_enabled"))
+    moderation_ran = bool(operations.get("guardrails_moderation_executed"))
+    guard_cost = float(costs.get("guardrails_usd", 0.0))
+    if guardrails_on or guard_cost > 0:
+        entries.append(
+            {
+                **common,
+                "call_type": CALL_GUARDRAILS,
+                "endpoint": "internal/guardrails",
+                "cost_usd": guard_cost,
+                "guardrails_enabled": guardrails_on,
+                "guardrails_moderation_executed": moderation_ran,
+                "status": "ejecutado" if moderation_ran else "activo (sin coste API)",
+            }
+        )
+
+    cache_enabled = bool(operations.get("semantic_cache_enabled"))
+    cache_lookup = bool(operations.get("cache_lookup_performed"))
+    cache_embed = bool(operations.get("cache_embedding_computed"))
+    embed_cost = float(costs.get("cache_embedding_usd", 0.0))
+    if cache_enabled or cache_lookup or cache_embed or embed_cost > 0:
+        entries.append(
+            {
+                **common,
+                "call_type": CALL_CACHE_EMBEDDING,
+                "endpoint": "internal/cache_embedding",
+                "cost_usd": embed_cost,
+                "semantic_cache_enabled": cache_enabled,
+                "cache_lookup_performed": cache_lookup,
+                "cache_embedding_computed": cache_embed,
+                "cache_hit": bool(operations.get("cache_hit")),
+                "cache_source": operations.get("cache_source"),
+                "status": "embedding calculado" if cache_embed else "lookup sin embedding",
+            }
+        )
+
+    return entries

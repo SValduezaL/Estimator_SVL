@@ -43,7 +43,14 @@ def test_estimate_injects_metadata_in_system_prompt(
     from app.memory.store import update_session
 
     async def identity_persist(session, **kwargs):  # noqa: ANN001, ANN003
-        return update_session(session)
+        return update_session(session), {
+            "executed": False,
+            "degraded": True,
+            "cost_usd": 0.0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+        }
 
     monkeypatch.setattr(estimations_router, "persist_estimation_turn", identity_persist)
 

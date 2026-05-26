@@ -19,8 +19,17 @@ def test_extractor_updates_project_name(monkeypatch: pytest.MonkeyPatch) -> None
         user_turn: str,
         assistant_turn: str,
         client: object,
-    ) -> ProjectMetadata:
-        return metadata.model_copy(update={"project_name": "CRM Acme"})
+    ) -> tuple[ProjectMetadata, dict]:
+        return metadata.model_copy(update={"project_name": "CRM Acme"}), {
+            "executed": True,
+            "degraded": False,
+            "cost_usd": 0.001,
+            "input_tokens": 10,
+            "output_tokens": 5,
+            "total_tokens": 15,
+            "model": "gpt-4o-mini",
+            "latency_ms": 100,
+        }
 
     monkeypatch.setattr("app.memory.service.update_metadata_llm", fake_update)
 
@@ -44,12 +53,21 @@ def test_extractor_updates_technologies_scope_constraints(
         user_turn: str,
         assistant_turn: str,
         client: object,
-    ) -> ProjectMetadata:
+    ) -> tuple[ProjectMetadata, dict]:
         return ProjectMetadata(
             mentioned_technologies=["PostgreSQL", "React"],
             agreed_scope="MVP con auth y contactos",
             explicit_constraints=["Debe cumplir GDPR"],
-        )
+        ), {
+            "executed": True,
+            "degraded": False,
+            "cost_usd": 0.002,
+            "input_tokens": 20,
+            "output_tokens": 10,
+            "total_tokens": 30,
+            "model": "gpt-4o-mini",
+            "latency_ms": 120,
+        }
 
     monkeypatch.setattr("app.memory.service.update_metadata_llm", fake_update)
 
@@ -78,7 +96,7 @@ def test_update_metadata_llm_validates_with_pydantic() -> None:
     client = AsyncMock()
     client.responses.create = AsyncMock(return_value=FakeResponse())
 
-    updated = asyncio.run(
+    updated, metrics = asyncio.run(
         update_metadata_llm(
             ProjectMetadata(),
             "user",
@@ -87,5 +105,7 @@ def test_update_metadata_llm_validates_with_pydantic() -> None:
         )
     )
     assert updated.project_name == "X"
+    assert metrics["executed"] is True
+    assert metrics["cost_usd"] >= 0
     assert updated.mentioned_technologies == ["Go"]
     client.responses.create.assert_awaited_once()

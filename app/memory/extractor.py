@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 import structlog
@@ -10,6 +11,9 @@ from pydantic import ValidationError
 
 from app.memory.exceptions import MetadataExtractionError
 from app.memory.models import ProjectMetadata
+from app.services.llm_pricing import estimate_cost_usd
+
+EXTRACTOR_MODEL = "gpt-4o-mini"
 
 log = structlog.get_logger(__name__)
 
@@ -96,12 +100,30 @@ def _parse_response_output(response: Any) -> str:
     return "\n".join(chunks).strip()
 
 
+def _usage_from_openai_response(response: Any) -> dict[str, int]:
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+    inp = int(
+        getattr(usage, "input_tokens", 0)
+        or getattr(usage, "prompt_tokens", 0)
+        or 0
+    )
+    out = int(
+        getattr(usage, "output_tokens", 0)
+        or getattr(usage, "completion_tokens", 0)
+        or 0
+    )
+    total = int(getattr(usage, "total_tokens", 0) or (inp + out))
+    return {"input_tokens": inp, "output_tokens": out, "total_tokens": total}
+
+
 async def update_metadata_llm(
     metadata: ProjectMetadata,
     user_turn: str,
     assistant_turn: str,
     client: Any,
-) -> ProjectMetadata:
+) -> tuple[ProjectMetadata, dict[str, Any]]:
     """Actualiza metadata con OpenAI Responses API y salida JSON estructurada."""
     if client is None:
         raise MetadataExtractionError("OpenAI client is not configured")
@@ -121,8 +143,9 @@ async def update_metadata_llm(
     )
 
     try:
+        t0 = time.perf_counter()
         response = await client.responses.create(
-            model="gpt-4o-mini",
+            model=EXTRACTOR_MODEL,
             input=[{"role": "user", "content": prompt}],
             text={
                 "format": {
@@ -136,6 +159,21 @@ async def update_metadata_llm(
         raw_json = _parse_response_output(response)
         parsed = json.loads(raw_json)
         updated = ProjectMetadata.model_validate(parsed)
+        usage = _usage_from_openai_response(response)
+        latency_ms = int((time.perf_counter() - t0) * 1000)
+        cost_usd = estimate_cost_usd(
+            EXTRACTOR_MODEL,
+            usage["input_tokens"],
+            usage["output_tokens"],
+        )
+        op_metrics = {
+            "executed": True,
+            "degraded": False,
+            "cost_usd": cost_usd,
+            "model": EXTRACTOR_MODEL,
+            "latency_ms": latency_ms,
+            **usage,
+        }
     except MetadataExtractionError:
         raise
     except (json.JSONDecodeError, ValidationError) as exc:
@@ -169,4 +207,4 @@ async def update_metadata_llm(
         constraints_count=len(updated.explicit_constraints),
         rejected_count=len(updated.rejected_options),
     )
-    return updated
+    return updated, op_metrics

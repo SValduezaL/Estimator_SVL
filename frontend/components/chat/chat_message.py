@@ -23,10 +23,10 @@ def render_chat_message(msg: dict[str, Any]) -> None:
 
     st.markdown(
         f"<div class='{css}'>"
-        f"<div style='font-size:0.72rem;color:#94a3b8;margin-bottom:0.35rem'>"
+        f"<div class='est-chat-meta'>"
         f"{escape(role.upper())} · {escape(ts)}"
         f"</div>"
-        f"<div>{escape(content)}</div>"
+        f"<div class='est-chat-body'>{escape(content)}</div>"
         f"</div>",
         unsafe_allow_html=True,
     )

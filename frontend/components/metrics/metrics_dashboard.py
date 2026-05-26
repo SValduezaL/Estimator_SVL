@@ -5,6 +5,7 @@ from __future__ import annotations
 import streamlit as st
 
 from frontend.components.metrics.cost_breakdown import render_cost_breakdown
+from frontend.components.metrics.operations_status import render_operations_status
 from frontend.components.metrics.latency_charts import render_latency_charts
 from frontend.components.metrics.session_metrics_table import render_session_metrics_table
 from frontend.components.metrics.token_charts import render_token_charts
@@ -24,6 +25,7 @@ def render_metrics_dashboard() -> None:
     global_cost = float(st.session_state.get("global_total_cost_usd", 0.0))
 
     st.markdown(f"### Coste acumulado global: **{format_usd(global_cost, 4)}**")
+    render_operations_status()
 
     f1, f2, f3 = st.columns(3)
     with f1:

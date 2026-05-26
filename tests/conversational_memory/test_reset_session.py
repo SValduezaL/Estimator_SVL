@@ -36,7 +36,12 @@ def test_new_session_after_estimate_starts_clean(
     async def fake_persist(session, **kwargs):  # noqa: ANN001, ANN003
         session.project_metadata = ProjectMetadata(project_name="Dirty")
         session.history.append(Message(role="user", content="old"))
-        return update_session(session)
+        return update_session(session), {
+            "executed": False,
+            "degraded": True,
+            "cost_usd": 0.0,
+            "total_tokens": 0,
+        }
 
     monkeypatch.setattr(estimations_router, "persist_estimation_turn", fake_persist)
 
@@ -62,7 +67,12 @@ def test_estimate_with_session_injects_history(
     import app.routers.estimations as estimations_router
 
     async def identity_persist(session, **kwargs):  # noqa: ANN001, ANN003
-        return update_session(session)
+        return update_session(session), {
+            "executed": False,
+            "degraded": True,
+            "cost_usd": 0.0,
+            "total_tokens": 0,
+        }
 
     monkeypatch.setattr(estimations_router, "persist_estimation_turn", identity_persist)
 

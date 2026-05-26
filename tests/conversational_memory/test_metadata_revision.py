@@ -17,11 +17,11 @@ def test_technology_replacement(monkeypatch: pytest.MonkeyPatch) -> None:
         user_turn: str,
         assistant_turn: str,
         client: object,
-    ) -> ProjectMetadata:
+    ) -> tuple[ProjectMetadata, dict]:
         return ProjectMetadata(
             mentioned_technologies=["Node.js"],
             rejected_options=["Rails"],
-        )
+        ), {"executed": True, "degraded": False, "cost_usd": 0.0, "total_tokens": 0}
 
     monkeypatch.setattr("app.memory.service.update_metadata_llm", fake_update)
 
@@ -45,8 +45,13 @@ def test_fact_retraction_clears_field(monkeypatch: pytest.MonkeyPatch) -> None:
         user_turn: str,
         assistant_turn: str,
         client: object,
-    ) -> ProjectMetadata:
-        return metadata.model_copy(update={"assumed_team_size": None})
+    ) -> tuple[ProjectMetadata, dict]:
+        return metadata.model_copy(update={"assumed_team_size": None}), {
+            "executed": True,
+            "degraded": False,
+            "cost_usd": 0.0,
+            "total_tokens": 0,
+        }
 
     monkeypatch.setattr("app.memory.service.update_metadata_llm", fake_update)
 
@@ -69,8 +74,13 @@ def test_rejected_options_accumulated(monkeypatch: pytest.MonkeyPatch) -> None:
         user_turn: str,
         assistant_turn: str,
         client: object,
-    ) -> ProjectMetadata:
-        return ProjectMetadata(rejected_options=["Kubernetes", "serverless"])
+    ) -> tuple[ProjectMetadata, dict]:
+        return ProjectMetadata(rejected_options=["Kubernetes", "serverless"]), {
+            "executed": True,
+            "degraded": False,
+            "cost_usd": 0.0,
+            "total_tokens": 0,
+        }
 
     monkeypatch.setattr("app.memory.service.update_metadata_llm", fake_update)
 

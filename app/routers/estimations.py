@@ -34,6 +34,12 @@ from app.memory.service import (
 from app.memory.store import get_session
 from app.prompts.registry import DEFAULT_ESTIMATION_BUNDLE
 from app.schemas.estimation import EstimationRequest, EstimationResponse, TokenUsageResponse
+from app.schemas.estimation_operations import (
+    EstimationOperationsMetrics,
+    OperationCosts,
+    OperationUsage,
+)
+from app.services.llm_pricing import estimate_cost_usd
 from app.services.llm_service import build_estimation_cache_inputs
 from app.services.llm_wrapper import CACHE_SCHEMA_VERSION, LLMWrapper
 from app.services.structured_llm import ReasoningLengthError
@@ -51,6 +57,57 @@ def _metrics_from_lookup(
     if lookup.similarity is not None:
         base["semantic_similarity"] = lookup.similarity
     return base
+
+
+def _embedding_lookup_cost_usd(description: str, settings: Settings) -> float:
+    """Estimación orientativa del coste de embedding en lookup semántico."""
+    if not settings.semantic_cache_enabled:
+        return 0.0
+    tokens = max(8, len(description) // 4)
+    return estimate_cost_usd(settings.semantic_embedding_model, tokens, 0)
+
+
+def _build_operations_metrics(
+    *,
+    settings: Settings,
+    estimation_cost_usd: float,
+    extraction: dict[str, Any] | None = None,
+    cache_lookup_performed: bool = False,
+    cache_embedding_computed: bool = False,
+    cache_hit: bool = False,
+    cache_source: str | None = None,
+    openai_client: Any | None = None,
+) -> EstimationOperationsMetrics:
+    ext = extraction or {}
+    mem_cost = float(ext.get("cost_usd", 0.0)) if ext.get("executed") else 0.0
+    guardrails_on = settings.guardrails_enabled
+    moderation_on = guardrails_on and settings.guardrails_moderation_enabled
+    moderation_ran = moderation_on and openai_client is not None
+
+    return EstimationOperationsMetrics(
+        costs=OperationCosts(
+            estimation_usd=float(estimation_cost_usd),
+            memory_extraction_usd=mem_cost,
+            guardrails_usd=0.0,
+            cache_embedding_usd=0.0,
+        ),
+        memory_extraction=OperationUsage(
+            input_tokens=int(ext.get("input_tokens", 0)),
+            output_tokens=int(ext.get("output_tokens", 0)),
+            total_tokens=int(ext.get("total_tokens", 0)),
+            model=ext.get("model"),
+            latency_ms=ext.get("latency_ms"),
+        ),
+        memory_extraction_executed=bool(ext.get("executed")),
+        memory_extraction_degraded=bool(ext.get("degraded")),
+        guardrails_enabled=guardrails_on,
+        guardrails_moderation_executed=moderation_ran,
+        semantic_cache_enabled=bool(settings.semantic_cache_enabled and (settings.redis_url or "").strip()),
+        cache_lookup_performed=cache_lookup_performed,
+        cache_embedding_computed=cache_embedding_computed,
+        cache_hit=cache_hit,
+        cache_source=cache_source,
+    )
 
 
 @router.post("/estimate", response_model=EstimationResponse)
@@ -112,10 +169,14 @@ async def create_estimation(
 
     start = time.perf_counter()
     cache_embedding: list[float] | None = None
+    cache_lookup_performed = False
+    cache_embedding_computed = False
 
     if orchestrator is not None and session is None:
+        cache_lookup_performed = True
         lookup = orchestrator.lookup(cache_ctx)
         cache_embedding = lookup.embedding
+        cache_embedding_computed = cache_embedding is not None
         if lookup.hit and lookup.payload is not None:
             result = run_output_guardrails(
                 lookup.payload.result,
@@ -137,6 +198,21 @@ async def create_estimation(
                 phase_count=len(result.phases),
                 session_id=request.session_id,
             )
+            resp_seconds = time.perf_counter() - start
+            operations = _build_operations_metrics(
+                settings=settings,
+                estimation_cost_usd=float(metrics["cost_usd"]),
+                cache_lookup_performed=True,
+                cache_embedding_computed=cache_embedding_computed,
+                cache_hit=True,
+                cache_source=str(metrics.get("cache_source")),
+                openai_client=openai_client,
+            )
+            if cache_embedding_computed:
+                operations.costs.cache_embedding_usd = _embedding_lookup_cost_usd(
+                    input_guarded.text,
+                    settings,
+                )
             return EstimationResponse(
                 result=result,
                 prompt_version=bundle.public_id,
@@ -147,7 +223,8 @@ async def create_estimation(
                 cache_hit=True,
                 finish_reason=str(metrics.get("finish_reason", "stop")),
                 cost_usd=float(metrics["cost_usd"]),
-                response_seconds=time.perf_counter() - start,
+                response_seconds=resp_seconds,
+                operations=operations,
             )
 
     system_prompt, user_message, model_used, max_tokens, thinking_budget, prompt_bundle = (
@@ -214,8 +291,9 @@ async def create_estimation(
         )
         raise HTTPException(status_code=502, detail="Structured estimation failed") from exc
 
+    extraction_metrics: dict[str, Any] | None = None
     if session is not None:
-        await persist_estimation_turn(
+        _, extraction_metrics = await persist_estimation_turn(
             session,
             user_turn=input_guarded.text,
             result=result,
@@ -238,6 +316,23 @@ async def create_estimation(
         session_id=request.session_id,
     )
 
+    resp_seconds = time.perf_counter() - start
+    operations = _build_operations_metrics(
+        settings=settings,
+        estimation_cost_usd=float(metrics["cost_usd"]),
+        extraction=extraction_metrics,
+        cache_lookup_performed=cache_lookup_performed,
+        cache_embedding_computed=cache_embedding_computed,
+        cache_hit=bool(metrics.get("cache_hit")),
+        cache_source=str(metrics.get("cache_source")) if metrics.get("cache_source") else None,
+        openai_client=openai_client,
+    )
+    if cache_embedding_computed:
+        operations.costs.cache_embedding_usd = _embedding_lookup_cost_usd(
+            input_guarded.text,
+            settings,
+        )
+
     return EstimationResponse(
         result=result,
         prompt_version=prompt_bundle.public_id,
@@ -248,5 +343,6 @@ async def create_estimation(
         cache_hit=bool(metrics.get("cache_hit")),
         finish_reason=str(metrics.get("finish_reason", "stop")),
         cost_usd=float(metrics["cost_usd"]),
-        response_seconds=time.perf_counter() - start,
+        response_seconds=resp_seconds,
+        operations=operations,
     )

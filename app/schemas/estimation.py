@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.schemas.estimation_common import SCHEMA_VERSION
+from app.schemas.estimation_operations import EstimationOperationsMetrics
 from app.schemas.estimation_output import EstimationResult
 
 # Re-exports para compatibilidad de imports existentes
@@ -41,3 +42,7 @@ class EstimationResponse(BaseModel):
     finish_reason: str
     cost_usd: float
     response_seconds: float
+    operations: EstimationOperationsMetrics | None = Field(
+        default=None,
+        description="Desglose de costes y estado de guardrails/caché/extractor",
+    )

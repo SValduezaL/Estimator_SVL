@@ -94,15 +94,16 @@ async def refresh_metadata_from_turn(
     user_turn: str,
     assistant_turn: str,
     client: Any,
-) -> Session:
+) -> tuple[Session, dict[str, Any]]:
     """Actualiza project_metadata mediante el extractor LLM."""
     previous = session.project_metadata
-    session.project_metadata = await update_metadata_llm(
+    updated, op_metrics = await update_metadata_llm(
         previous,
         user_turn,
         assistant_turn,
         client,
     )
+    session.project_metadata = updated
     if session.project_metadata != previous:
         log.info(
             "metadata_revised",
@@ -111,7 +112,7 @@ async def refresh_metadata_from_turn(
             technologies_count=len(session.project_metadata.mentioned_technologies),
             rejected_count=len(session.project_metadata.rejected_options),
         )
-    return session
+    return session, op_metrics
 
 
 async def persist_estimation_turn(
@@ -120,12 +121,24 @@ async def persist_estimation_turn(
     user_turn: str,
     result: EstimationResult,
     client: Any,
-) -> Session:
+) -> tuple[Session, dict[str, Any]]:
     """Registra turno, actualiza metadata y persiste la sesión."""
     assistant_turn = result.model_dump_json()
     append_turn(session, user_content=user_turn, assistant_content=assistant_turn)
+    extraction_metrics: dict[str, Any] = {
+        "executed": False,
+        "degraded": True,
+        "cost_usd": 0.0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "model": None,
+        "latency_ms": None,
+    }
     try:
-        await refresh_metadata_from_turn(
+        if client is None:
+            raise MetadataExtractionError("OpenAI client is not configured")
+        _, extraction_metrics = await refresh_metadata_from_turn(
             session,
             user_turn=user_turn,
             assistant_turn=assistant_turn,
@@ -139,4 +152,6 @@ async def persist_estimation_turn(
             error_message=str(exc),
             history_saved=True,
         )
-    return update_session(session)
+        extraction_metrics["degraded"] = True
+        extraction_metrics["error"] = str(exc)
+    return update_session(session), extraction_metrics

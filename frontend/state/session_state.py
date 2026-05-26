@@ -10,8 +10,13 @@ from uuid import uuid4
 
 import streamlit as st
 
-from frontend.api.metrics import infer_memory_extraction_trace, parse_estimation_metrics
-from frontend.styles.constants import CALL_MEMORY_EXTRACTION
+from frontend.api.metrics import (
+    build_operation_call_log_entries,
+    infer_memory_extraction_trace,
+    parse_estimation_metrics,
+    total_cost_from_response,
+)
+from frontend.styles.constants import CALL_ESTIMATION
 
 log = logging.getLogger("estimator.frontend.session")
 
@@ -158,9 +163,12 @@ def append_chat_turn(
     rec["message_count"] = len(rec["messages"])
     rec["updated_at"] = ts
 
-    cost = float(metrics_row.get("cost_usd", 0.0))
-    rec["total_cost_usd"] += cost
-    st.session_state.global_total_cost_usd = float(st.session_state.get("global_total_cost_usd", 0.0)) + cost
+    turn_total = total_cost_from_response(estimation_response)
+    rec["total_cost_usd"] += turn_total
+    st.session_state.global_total_cost_usd = (
+        float(st.session_state.get("global_total_cost_usd", 0.0)) + turn_total
+    )
+    rec["last_operations"] = estimation_response.get("operations")
 
     if metrics_row.get("cache_hit"):
         rec["cache_hits"] += 1
@@ -177,12 +185,26 @@ def append_chat_turn(
     trace["request_id"] = request_id
     rec["memory_traces"].append(trace)
 
+    breakdown = metrics_row.get("cost_breakdown") or {}
     log_entry = {
         **metrics_row,
         "timestamp": ts,
         "turn_id": turn_id,
+        "cost_usd": float(
+            breakdown.get(CALL_ESTIMATION, metrics_row.get("cost_usd", 0.0))
+        ),
     }
+    log_entry.pop("cost_breakdown", None)
     st.session_state.call_log.append(log_entry)
+
+    for op_row in build_operation_call_log_entries(
+        estimation_response,
+        timestamp=ts,
+        session_id=session_id,
+        request_id=request_id,
+        turn_id=turn_id,
+    ):
+        st.session_state.call_log.append(op_row)
 
     if metadata_before != metadata_after:
         rec["metadata_history"].append(
@@ -193,20 +215,6 @@ def append_chat_turn(
                 "diff": trace.get("diff"),
             }
         )
-
-    extraction_cost = (metrics_row.get("cost_breakdown") or {}).get(CALL_MEMORY_EXTRACTION, 0.0)
-    if extraction_cost > 0:
-        st.session_state.call_log.append(
-            {
-                "call_type": CALL_MEMORY_EXTRACTION,
-                "endpoint": "internal/memory_extractor",
-                "cost_usd": extraction_cost,
-                "timestamp": ts,
-                "session_id": session_id,
-                "request_id": request_id,
-            }
-        )
-
 
 def record_estimation_call(
     *,
