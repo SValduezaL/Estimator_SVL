@@ -107,6 +107,24 @@ class EstimationResult(BaseModel):
         return self
 
 
+class TurnObserved(BaseModel):
+    """Per-turn observability mirror of the ``turn_observed`` structlog event."""
+
+    turn_index: int = Field(ge=1)
+    session_id: str
+    enriched_transcript_chars: int = Field(ge=0)
+    attachments_total_chars: int = Field(ge=0)
+    messages_in_window: int = Field(ge=0)
+    anchors_count: int = Field(ge=0)
+    summary_chars: int = Field(ge=0)
+    tokens_in: int = Field(ge=0)
+    tokens_out: int = Field(ge=0)
+    cost_usd: float = Field(ge=0.0)
+    latency_ms: int = Field(ge=0)
+    cache_hit_kind: str = "none"
+    last_resolved_tier: str | None = None
+
+
 class EstimationResponse(BaseModel):
     """Wraps the validated result, the prompt version that produced it, and
     whether it came from a cache (exact or semantic)."""
@@ -114,6 +132,7 @@ class EstimationResponse(BaseModel):
     result: EstimationResult
     prompt_version: str
     cached: bool = False
+    observability: TurnObserved | None = None
 
 
 from app.schemas.acb import BossTrace  # noqa: E402

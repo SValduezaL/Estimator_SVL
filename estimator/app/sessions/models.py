@@ -176,3 +176,7 @@ class Session(BaseModel):
         ge=0,
         description="Successful estimate turns completed in this session (1-based turn_index).",
     )
+
+    def history_anchor_contents(self) -> list[str]:
+        """Verbatim anchor message bodies, in promotion order."""
+        return [anchor.content for anchor in self.history.anchors]

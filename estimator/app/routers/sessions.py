@@ -63,6 +63,9 @@ class SessionInfoResponse(BaseModel):
     summary_chars: int = 0
     last_resolved_tier: str | None = None
     last_tier_rule: str | None = None
+    turn_count: int = 0
+    summary_text: str | None = None
+    anchor_texts: list[str] = Field(default_factory=list)
 
 
 @router.post("", response_model=CreateSessionResponse, status_code=201)
@@ -92,6 +95,9 @@ def get_session(
         summary_chars=len(session.history.summary or ""),
         last_resolved_tier=session.last_resolved_tier,
         last_tier_rule=session.last_tier_rule,
+        turn_count=session.turn_count,
+        summary_text=session.history.summary,
+        anchor_texts=session.history_anchor_contents(),
     )
 
 

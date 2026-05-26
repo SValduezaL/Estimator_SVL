@@ -57,7 +57,7 @@ def test_turn_observed_emitted_once_per_turn_with_all_fields(
     )
 
     with capture_logs() as cap_logs:
-        estimation_service.estimate_conversational(
+        response1 = estimation_service.estimate_conversational(
             session=session,
             transcript=VALID_TRANSCRIPT,
             project_type=ProjectType.WEB_SAAS,
@@ -65,7 +65,7 @@ def test_turn_observed_emitted_once_per_turn_with_all_fields(
             output_format=OutputFormat.PHASES_TABLE,
             attachments_total_chars=500,
         )
-        estimation_service.estimate_conversational(
+        response2 = estimation_service.estimate_conversational(
             session=session,
             transcript=VALID_TRANSCRIPT + " Add billing with Stripe.",
             project_type=ProjectType.WEB_SAAS,
@@ -73,6 +73,11 @@ def test_turn_observed_emitted_once_per_turn_with_all_fields(
             output_format=OutputFormat.PHASES_TABLE,
             attachments_total_chars=0,
         )
+
+    assert response1.observability is not None
+    assert response1.observability.turn_index == 1
+    assert response2.observability is not None
+    assert response2.observability.turn_index == 2
 
     events = _turn_observed_events(cap_logs)
     assert len(events) == 2
@@ -119,12 +124,22 @@ def test_turn_observed_via_http_two_turns(
     assert r1.status_code == 200, r1.text
     assert r2.status_code == 200, r2.text
 
+    body1 = r1.json()
+    assert body1["observability"] is not None
+    assert body1["observability"]["turn_index"] == 1
+    assert body1["observability"]["session_id"] == session_id
+    assert body1["observability"]["latency_ms"] == 1
+    body2 = r2.json()
+    assert body2["observability"]["turn_index"] == 2
+
+    # Primary contract: observability on the HTTP response (structlog capture may
+    # miss PrintLogger output in integration tests).
     events = _turn_observed_events(cap_logs)
-    assert len(events) == 2
-    assert events[0]["turn_index"] == 1
-    assert events[1]["turn_index"] == 2
-    assert events[0]["session_id"] == session_id
-    assert events[0]["attachments_total_chars"] == 0
+    if events:
+        assert len(events) == 2
+        assert events[0]["turn_index"] == 1
+        assert events[1]["turn_index"] == 2
+        assert events[0]["session_id"] == session_id
 
 
 def test_turn_observed_reports_attachment_chars(

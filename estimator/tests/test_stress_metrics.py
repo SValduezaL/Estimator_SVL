@@ -6,9 +6,12 @@ import pytest
 
 from app.sessions.models import ProjectMetadata
 from evals.stress.metrics import (
+    AttachmentRecallMetric,
     CostBudgetMetric,
     LatencyBudgetMetric,
     MemoryDriftMetric,
+    evaluate_memory_drift,
+    recall_marker_token,
 )
 from evals.stress.observation import SessionSnapshot, TurnObservation
 
@@ -108,3 +111,37 @@ def test_memory_drift_rejects_empty_fact() -> None:
 def test_latency_budget_rejects_negative_budget() -> None:
     with pytest.raises(ValueError, match="budget_ms"):
         LatencyBudgetMetric(budget_ms=-1)
+
+
+# --- AttachmentRecallMetric -------------------------------------------------
+
+
+def test_attachment_recall_passes_when_marker_in_summary() -> None:
+    token = recall_marker_token(
+        "STRESS_RECALL_MARKER_5KB: unique-scope-token-5kb-7f3a"
+    )
+    metric = AttachmentRecallMetric(marker_token=token)
+    result = metric.evaluate(
+        "Estimate includes unique-scope-token-5kb-7f3a in scope.",
+    )
+    assert result.passed is True
+    assert result.score == 1.0
+
+
+def test_attachment_recall_fails_when_marker_missing() -> None:
+    metric = AttachmentRecallMetric(marker_token="unique-scope-token-5kb-7f3a")
+    result = metric.evaluate("No marker in this summary.")
+    assert result.passed is False
+    assert result.score == 0.0
+
+
+def test_evaluate_memory_drift_aggregates_facts() -> None:
+    snapshot = SessionSnapshot(
+        metadata=ProjectMetadata(project_name="Nimbus CRM"),
+    )
+    passed, score = evaluate_memory_drift(
+        snapshot,
+        [(1, "project name: Nimbus"), (2, "missing fact xyz")],
+    )
+    assert passed is False
+    assert 0.0 < score < 1.0

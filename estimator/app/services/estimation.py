@@ -42,6 +42,7 @@ from app.schemas.estimation import (
     EstimationResult,
     OutputFormat,
     ProjectType,
+    TurnObserved,
 )
 from app.services.boss import Boss
 from app.services.cache import EstimationCache
@@ -61,10 +62,9 @@ def _emit_turn_observed(
     enriched_transcript_chars: int,
     attachments_total_chars: int,
     meta: dict[str, Any],
-) -> None:
+) -> TurnObserved:
     """Single observability event per conversational turn (actor path)."""
-    log.info(
-        "turn_observed",
+    observed = TurnObserved(
         turn_index=session.turn_count,
         session_id=session.session_id,
         enriched_transcript_chars=enriched_transcript_chars,
@@ -79,6 +79,8 @@ def _emit_turn_observed(
         cache_hit_kind="none",
         last_resolved_tier=session.last_resolved_tier,
     )
+    log.info("turn_observed", **observed.model_dump())
+    return observed
 
 
 def _exact_cache_key(request: EstimationRequest, prompt_version: str, model: str) -> str:
@@ -296,7 +298,7 @@ class EstimationService:
         )
 
         session.turn_count += 1
-        _emit_turn_observed(
+        observability = _emit_turn_observed(
             session=session,
             enriched_transcript_chars=len(transcript),
             attachments_total_chars=attachments_total_chars,
@@ -307,6 +309,7 @@ class EstimationService:
             result=result,
             prompt_version=self.conversational_prompt_version,
             cached=False,
+            observability=observability,
         )
 
     def estimate_with_acb(

@@ -144,3 +144,59 @@ class MemoryDriftMetric:
             passed=passed,
             details=details,
         )
+
+
+class AttachmentRecallMetric:
+    """1.0 if the PDF recall marker token appears in the estimation output."""
+
+    name = "attachment_recall"
+
+    def __init__(self, marker_token: str) -> None:
+        self.marker_token = marker_token.strip()
+        if not self.marker_token:
+            raise ValueError("marker_token must be non-empty")
+
+    def evaluate(
+        self,
+        estimation_summary: str,
+        *,
+        phases_text: str = "",
+    ) -> MetricResult:
+        haystack = f"{estimation_summary}\n{phases_text}".lower()
+        needle = self.marker_token.lower()
+        passed = needle in haystack
+        if passed:
+            details = f"marker {self.marker_token!r} found in estimation output"
+        else:
+            details = f"marker {self.marker_token!r} missing from estimation output"
+        return MetricResult(
+            name=self.name,
+            score=1.0 if passed else 0.0,
+            passed=passed,
+            details=details,
+        )
+
+
+def recall_marker_token(marker_line: str) -> str:
+    """Extract the searchable token from a ``RECALL_MARKERS`` entry."""
+    if ": " in marker_line:
+        return marker_line.split(": ", 1)[1].strip()
+    return marker_line.strip()
+
+
+def evaluate_memory_drift(
+    snapshot: SessionSnapshot,
+    facts: list[tuple[int, str]],
+) -> tuple[bool, float]:
+    """Aggregate MemoryDriftMetric over all facts introduced up to this turn."""
+    if not facts:
+        return True, 1.0
+    passed_flags = [
+        MemoryDriftMetric(fact=fact).evaluate(snapshot).passed
+        for _intro, fact in facts
+    ]
+    scores = [
+        MemoryDriftMetric(fact=fact).evaluate(snapshot).score
+        for _intro, fact in facts
+    ]
+    return all(passed_flags), sum(scores) / len(scores)
