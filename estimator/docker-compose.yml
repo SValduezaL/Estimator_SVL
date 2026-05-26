@@ -27,6 +27,7 @@ services:
     volumes:
       - ./app:/app/app
       - ./tests:/app/tests
+      - ./evals:/app/evals
 
     # Override the default CMD to enable auto-reload on file changes.
     # Remove --reload for production deployments.
