@@ -28,8 +28,3 @@ venv/
 
 # Session guides / docs
 docs/
-guides/
-
-# AI assistants
-.claude/
-.cursor/
