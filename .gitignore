@@ -1,11 +1,28 @@
-# Live-session guides — written for the instructor, exported to Notion,
-# never committed.
-guides/
+# Environment variables
+.env
 
-# Local environment / editor cruft (the project also has its own .gitignore
-# inside estimator/, this catches files at the repo root).
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+.venv/
+venv/
+
+# Testing / linting caches
+.pytest_cache/
+.ruff_cache/
+
+# OS files
 .DS_Store
+
+# IDEs
 .idea/
 .vscode/
-__pycache__/
-.claude/
+
+# Session guides / docs
+docs/
