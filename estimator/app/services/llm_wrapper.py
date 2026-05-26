@@ -214,7 +214,7 @@ class LLMWrapper:
         )
         t0 = time.perf_counter()
         try:
-            result = self._instructor.chat.completions.create(
+            result, completion = self._instructor.chat.completions.create_with_completion(
                 model=target_model,
                 api_key=api_key,
                 timeout=self.timeout,
@@ -234,15 +234,16 @@ class LLMWrapper:
             raise
 
         latency_ms = int((time.perf_counter() - t0) * 1000)
-        meta = {
-            "model": _normalise_model_name(target_model),
-            "provider": _provider_from_model(target_model),
-            "latency_ms": latency_ms,
-        }
+        meta = self._meta_from_completion(
+            completion, target_model=target_model, latency_ms=latency_ms
+        )
         log.info(
             "llm_structured_chat_completed",
             model=meta["model"],
             provider=meta["provider"],
+            tokens_in=meta["tokens_in"],
+            tokens_out=meta["tokens_out"],
+            cost_usd=meta["cost_usd"],
             latency_ms=latency_ms,
         )
         return result, meta
@@ -285,7 +286,7 @@ class LLMWrapper:
         )
         t0 = time.perf_counter()
         try:
-            result = self._instructor.chat.completions.create(
+            result, completion = self._instructor.chat.completions.create_with_completion(
                 model=target_model,
                 api_key=api_key,
                 timeout=self.timeout,
@@ -305,15 +306,16 @@ class LLMWrapper:
             raise
 
         latency_ms = int((time.perf_counter() - t0) * 1000)
-        meta = {
-            "model": _normalise_model_name(target_model),
-            "provider": _provider_from_model(target_model),
-            "latency_ms": latency_ms,
-        }
+        meta = self._meta_from_completion(
+            completion, target_model=target_model, latency_ms=latency_ms
+        )
         log.info(
             "llm_structured_call_completed",
             model=meta["model"],
             provider=meta["provider"],
+            tokens_in=meta["tokens_in"],
+            tokens_out=meta["tokens_out"],
+            cost_usd=meta["cost_usd"],
             latency_ms=latency_ms,
         )
         return result, meta
@@ -365,6 +367,24 @@ class LLMWrapper:
                 **kwargs,
             )
         return self.router.completion(model="estimator", **kwargs)
+
+    @staticmethod
+    def _meta_from_completion(
+        completion: Any, *, target_model: str, latency_ms: int
+    ) -> dict[str, Any]:
+        """Build observability meta from an Instructor/LiteLLM completion."""
+        usage = getattr(completion, "usage", None)
+        input_tokens = getattr(usage, "prompt_tokens", 0) or 0
+        output_tokens = getattr(usage, "completion_tokens", 0) or 0
+        model = _normalise_model_name(getattr(completion, "model", None) or target_model)
+        return {
+            "model": model,
+            "provider": _provider_from_model(model),
+            "latency_ms": latency_ms,
+            "tokens_in": input_tokens,
+            "tokens_out": output_tokens,
+            "cost_usd": _estimate_cost(model, input_tokens, output_tokens),
+        }
 
     @staticmethod
     def _normalise_response(response: Any, *, latency_ms: int) -> dict[str, Any]:

@@ -58,7 +58,14 @@ class _FakeLLMWrapper:
         )
         result, metadata = self._next()
         self._turn += 1
-        meta = {"model": "gpt-4o-mini", "provider": "openai", "latency_ms": 1}
+        meta = {
+            "model": "gpt-4o-mini",
+            "provider": "openai",
+            "latency_ms": 1,
+            "tokens_in": 100,
+            "tokens_out": 50,
+            "cost_usd": 0.0001,
+        }
         if response_model is EstimationResult:
             return result, meta
         # metadata extractor path

@@ -55,6 +55,32 @@ from app.sessions.tier_resolver import Tier, resolve_tier
 log = structlog.get_logger()
 
 
+def _emit_turn_observed(
+    *,
+    session: Session,
+    enriched_transcript_chars: int,
+    attachments_total_chars: int,
+    meta: dict[str, Any],
+) -> None:
+    """Single observability event per conversational turn (actor path)."""
+    log.info(
+        "turn_observed",
+        turn_index=session.turn_count,
+        session_id=session.session_id,
+        enriched_transcript_chars=enriched_transcript_chars,
+        attachments_total_chars=attachments_total_chars,
+        messages_in_window=len(session.history.messages),
+        anchors_count=len(session.history.anchors),
+        summary_chars=len(session.history.summary or ""),
+        tokens_in=meta.get("tokens_in", 0),
+        tokens_out=meta.get("tokens_out", 0),
+        cost_usd=meta.get("cost_usd", 0.0),
+        latency_ms=meta.get("latency_ms", 0),
+        cache_hit_kind="none",
+        last_resolved_tier=session.last_resolved_tier,
+    )
+
+
 def _exact_cache_key(request: EstimationRequest, prompt_version: str, model: str) -> str:
     """Deterministic SHA-256 key over the typed request + prompt_version + model."""
     payload = json.dumps(
@@ -177,6 +203,7 @@ class EstimationService:
         detail_level: DetailLevel,
         output_format: OutputFormat,
         tier: Tier | None = None,
+        attachments_total_chars: int = 0,
     ) -> EstimationResponse:
         """Multi-turn estimation pipeline (Session 5).
 
@@ -266,6 +293,14 @@ class EstimationService:
             result=result,
             llm_wrapper=self.llm_wrapper,
             model=self.metadata_extractor_model,
+        )
+
+        session.turn_count += 1
+        _emit_turn_observed(
+            session=session,
+            enriched_transcript_chars=len(transcript),
+            attachments_total_chars=attachments_total_chars,
+            meta=meta,
         )
 
         return EstimationResponse(
