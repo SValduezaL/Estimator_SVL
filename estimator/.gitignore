@@ -28,3 +28,6 @@ venv/
 
 # Session guides / docs
 docs/
+
+# Stress attachment fixtures (generated locally; see evals/stress/fixtures/build_pdfs.py)
+evals/stress/fixtures/*.pdf
