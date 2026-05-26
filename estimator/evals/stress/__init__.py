@@ -7,6 +7,12 @@ from evals.stress.attachment_sizes import (
     PDF_FILENAMES,
     RECALL_MARKERS,
 )
+from evals.stress.metrics import (
+    CostBudgetMetric,
+    LatencyBudgetMetric,
+    MemoryDriftMetric,
+)
+from evals.stress.observation import SessionSnapshot, TurnObservation
 from evals.stress.scenarios import (
     PROFILE_IDS,
     TURN_LENGTHS,
@@ -26,6 +32,11 @@ __all__ = [
     "FIXTURES_DIR",
     "PDF_FILENAMES",
     "RECALL_MARKERS",
+    "CostBudgetMetric",
+    "LatencyBudgetMetric",
+    "MemoryDriftMetric",
+    "SessionSnapshot",
+    "TurnObservation",
     "PROFILE_IDS",
     "TURN_LENGTHS",
     "ProfileId",
