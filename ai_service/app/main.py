@@ -5,7 +5,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from ai_service.app.config import get_settings
+from ai_service.app.embedding_pipeline.router import router as embeddings_router
 from ai_service.app.logging import configure_logging
+from ai_service.app.ssl_utils import configure_ssl_certificates
+
+configure_ssl_certificates()
 
 APP_VERSION = "0.1.0"
 
@@ -28,6 +32,8 @@ app = FastAPI(
     ),
     lifespan=lifespan,
 )
+
+app.include_router(embeddings_router, prefix="/embeddings")
 
 
 @app.get("/", tags=["meta"])

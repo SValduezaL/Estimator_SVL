@@ -2,20 +2,67 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import tiktoken
+from tiktoken import Encoding
+from tiktoken.load import load_tiktoken_bpe
+from tiktoken.model import encoding_name_for_model
 
 from ai_service.app.embedding_pipeline.schemas import Budget, BudgetComponent, Chunk
+from ai_service.app.ssl_utils import configure_ssl_certificates
 
 EMBEDDING_MODEL_FOR_TOKEN_COUNT = "text-embedding-3-small"
+
+_LOCAL_CL100K_BPE = (
+    Path(__file__).resolve().parents[2] / "data" / "encodings" / "cl100k_base.tiktoken"
+)
+_CL100K_BPE_HASH = "223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7"
+_CL100K_PAT_STR = (
+    r"""'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}++|\p{N}{1,3}+| """
+    r"""?[^\s\p{L}\p{N}]++[\r\n]*+|\s++$|\s*[\r\n]|\s+(?!\S)|\s"""
+)
+_CL100K_SPECIAL_TOKENS = {
+    "<|endoftext|>": 100257,
+    "<|fim_prefix|>": 100258,
+    "<|fim_middle|>": 100259,
+    "<|fim_suffix|>": 100260,
+    "<|endofprompt|>": 100276,
+}
+
+
+def _tokenizer_for_model(model_for_token_count: str) -> Encoding:
+    """Load cl100k_base from bundled file when available (avoids SSL download on Windows)."""
+    encoding_name = encoding_name_for_model(model_for_token_count)
+    if encoding_name == "cl100k_base" and _LOCAL_CL100K_BPE.is_file():
+        mergeable_ranks = load_tiktoken_bpe(
+            str(_LOCAL_CL100K_BPE),
+            expected_hash=_CL100K_BPE_HASH,
+        )
+        return Encoding(
+            name="cl100k_base",
+            pat_str=_CL100K_PAT_STR,
+            mergeable_ranks=mergeable_ranks,
+            special_tokens=_CL100K_SPECIAL_TOKENS,
+        )
+
+    configure_ssl_certificates()
+    return tiktoken.encoding_for_model(model_for_token_count)
 
 
 class JSONStructuralChunker:
     """Chunks budget documents at the component level (one component = one chunk)."""
 
     def __init__(self, model_for_token_count: str = EMBEDDING_MODEL_FOR_TOKEN_COUNT) -> None:
-        self._tokenizer = tiktoken.encoding_for_model(model_for_token_count)
+        self._model_for_token_count = model_for_token_count
+        self._tokenizer: Encoding | None = None
+
+    @property
+    def _encoding(self) -> Encoding:
+        if self._tokenizer is None:
+            self._tokenizer = _tokenizer_for_model(self._model_for_token_count)
+        return self._tokenizer
 
     def chunk(self, budgets: list[Budget]) -> list[Chunk]:
         chunks: list[Chunk] = []
@@ -49,7 +96,7 @@ class JSONStructuralChunker:
             chunk_id=f"{budget.budget_id}::{component.component_id}",
             text=text,
             metadata=self._build_metadata(component, budget),
-            token_count=len(self._tokenizer.encode(text)),
+            token_count=len(self._encoding.encode(text)),
         )
 
     def _build_chunk_text(self, component: BudgetComponent, parent_context: str) -> str:

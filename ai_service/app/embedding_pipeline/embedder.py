@@ -11,6 +11,7 @@ from openai import OpenAI, RateLimitError
 
 from ai_service.app.config import Settings, get_settings
 from ai_service.app.embedding_pipeline.schemas import Chunk, EmbeddedChunk
+from ai_service.app.ssl_utils import create_openai_http_client
 
 log = structlog.get_logger(__name__)
 
@@ -48,7 +49,10 @@ class OpenAIEmbedder:
         if not self._api_key:
             raise ValueError("OPENAI_API_KEY is not configured")
         if self._client is None:
-            self._client = OpenAI(api_key=self._api_key)
+            self._client = OpenAI(
+                api_key=self._api_key,
+                http_client=create_openai_http_client(),
+            )
         return self._client
 
     def embed_one(self, text: str) -> list[float]:
