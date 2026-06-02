@@ -52,6 +52,8 @@ def test_stress_run_smoke_two_turns(
         reader = csv.DictReader(handle)
         csv_rows = list(reader)
     assert len(csv_rows) == 2
-    assert csv_rows[0]["latency_ms"] == "1"
-    assert csv_rows[0]["cost_usd"] == "0.0001"
+    # Actor + metadata extractor per turn.
+    assert csv_rows[0]["latency_ms"] == "2"
+    assert csv_rows[0]["cost_usd"] == "0.0002"
+    assert csv_rows[0]["tokens_in"] == "200"
     assert csv_rows[0]["memory_drift_pass"] == "1"

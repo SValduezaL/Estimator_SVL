@@ -4,12 +4,18 @@ Usage::
 
     uv run python -m evals.stress.run --scenarios growing --attachment-sizes 0 --repeats 1 --max-turns 3
     uv run python -m evals.stress.run --http http://localhost:8000 --scenarios growing,pivot
+    uv run python -m evals.stress.run --http http://localhost:8000 --resume --output /tmp/results.csv
+
+Each turn appends one row to the CSV (flush + fsync). Use ``--resume`` after a crash
+to skip cells already present in the output file.
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import os
+import signal
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -70,7 +76,20 @@ CSV_FIELDNAMES: list[str] = [
     "cost_budget_pass",
     "attachment_recall_pass",
     "estimation_cached",
+    "http_status",
+    "error_type",
+    "error_message",
 ]
+
+
+@dataclass(frozen=True)
+class TurnMatrixKey:
+    """Stable id for one cell in the stress matrix (used for --resume)."""
+
+    scenario: str
+    attachment_size_kb: int
+    repeat: int
+    turn_index: int
 
 
 @dataclass
@@ -84,6 +103,7 @@ class StressRunConfig:
     output: Path
     report: Path | None
     http_base: str | None
+    resume: bool = False
 
 
 def _normalize_scenarios(raw: str) -> list[ProfileId]:
@@ -137,6 +157,9 @@ def _row_from_turn(
     cost_budget_pass: bool,
     attachment_recall_pass: str,
     estimation_cached: bool,
+    http_status: int | None = None,
+    error_type: str = "",
+    error_message: str = "",
 ) -> dict[str, Any]:
     return {
         "run_id": run_id,
@@ -162,7 +185,84 @@ def _row_from_turn(
         "cost_budget_pass": int(cost_budget_pass),
         "attachment_recall_pass": attachment_recall_pass,
         "estimation_cached": int(estimation_cached),
+        "http_status": "" if http_status is None else http_status,
+        "error_type": error_type,
+        "error_message": error_message,
     }
+
+
+def _truncate_error_message(message: str, *, limit: int = 400) -> str:
+    msg = message.strip().replace("\n", " ")
+    return msg[:limit]
+
+
+def _matrix_key_from_row(row: dict[str, Any]) -> TurnMatrixKey:
+    return TurnMatrixKey(
+        scenario=str(row["scenario"]),
+        attachment_size_kb=int(row["attachment_size_kb"]),
+        repeat=int(row["repeat"]),
+        turn_index=int(row["turn_index"]),
+    )
+
+
+class IncrementalCsvWriter:
+    """Append one CSV row per turn with flush/fsync so crashes keep partial results."""
+
+    def __init__(self, path: Path, *, resume: bool) -> None:
+        self.path = path
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._done: set[TurnMatrixKey] = set()
+        self._file = None
+        self._writer: csv.DictWriter | None = None
+
+        if resume and self.path.exists() and self.path.stat().st_size > 0:
+            with self.path.open(newline="", encoding="utf-8") as handle:
+                reader = csv.DictReader(handle)
+                if list(reader.fieldnames or []) != CSV_FIELDNAMES:
+                    raise ValueError(
+                        f"{self.path} header mismatch; delete the file or run without --resume"
+                    )
+                for existing in reader:
+                    self._done.add(_matrix_key_from_row(existing))
+            self._file = self.path.open("a", newline="", encoding="utf-8")
+            self._writer = csv.DictWriter(self._file, fieldnames=CSV_FIELDNAMES)
+        else:
+            self._file = self.path.open("w", newline="", encoding="utf-8")
+            self._writer = csv.DictWriter(self._file, fieldnames=CSV_FIELDNAMES)
+            self._writer.writeheader()
+            self._flush()
+
+    def is_done(self, key: TurnMatrixKey) -> bool:
+        return key in self._done
+
+    def append(self, row: dict[str, Any]) -> None:
+        key = _matrix_key_from_row(row)
+        if key in self._done:
+            return
+        assert self._writer is not None and self._file is not None
+        self._writer.writerow(row)
+        self._flush()
+        self._done.add(key)
+
+    def _flush(self) -> None:
+        assert self._file is not None
+        self._file.flush()
+        os.fsync(self._file.fileno())
+
+    def close(self) -> None:
+        if self._file is not None:
+            self._file.close()
+            self._file = None
+            self._writer = None
+
+    @property
+    def rows_on_disk(self) -> int:
+        return len(self._done)
+
+
+def _read_csv_rows(path: Path) -> list[dict[str, Any]]:
+    with path.open(newline="", encoding="utf-8") as handle:
+        return list(csv.DictReader(handle))
 
 
 def _evaluate_turn_metrics(
@@ -207,7 +307,7 @@ def _post_estimate_in_process(
     transcript: str,
     profile: StressProfile,
     pdf_path: Path | None,
-) -> tuple[dict[str, Any], dict[str, Any]]:
+) -> dict[str, Any]:
     data = {
         "transcript": transcript,
         "project_type": profile.project_type,
@@ -228,9 +328,7 @@ def _post_estimate_in_process(
         files=files,
     )
     response.raise_for_status()
-    payload = response.json()
-    info = client.get(f"/sessions/{session_id}").json()
-    return payload, info
+    return response.json()
 
 
 def _post_estimate_http(
@@ -240,7 +338,7 @@ def _post_estimate_http(
     transcript: str,
     profile: StressProfile,
     pdf_path: Path | None,
-) -> tuple[dict[str, Any], dict[str, Any]]:
+) -> dict[str, Any]:
     data = {
         "transcript": transcript,
         "project_type": profile.project_type,
@@ -257,13 +355,11 @@ def _post_estimate_http(
         ]
     response = client.post(f"/sessions/{session_id}/estimate", data=data, files=files)
     response.raise_for_status()
-    payload = response.json()
-    info = client.get(f"/sessions/{session_id}").json()
-    return payload, info
+    return response.json()
 
 
 def run_stress(config: StressRunConfig) -> list[dict[str, Any]]:
-    """Execute the stress matrix and write ``config.output`` CSV."""
+    """Execute the stress matrix; append one CSV row per turn (durable on crash)."""
     missing = [
         size
         for size in config.attachment_sizes
@@ -273,88 +369,124 @@ def run_stress(config: StressRunConfig) -> list[dict[str, Any]]:
         build_all(output_dir=FIXTURES_DIR, force=False)
 
     rows: list[dict[str, Any]] = []
+    csv_writer = IncrementalCsvWriter(config.output, resume=config.resume)
+
+    def _persist_row(row: dict[str, Any]) -> None:
+        csv_writer.append(row)
+        rows.append(row)
 
     def _run_session(
         create_session: Callable[[], str],
-        run_turn: Callable[[str, StressProfile, Path | None, str], tuple[dict, dict]],
+        run_turn: Callable[[str, StressProfile, Path | None, str], dict[str, Any]],
+        get_session_info: Callable[[str], dict[str, Any]],
         profile: StressProfile,
         attachment_size_kb: int,
         repeat: int,
     ) -> None:
         run_id = uuid.uuid4().hex[:8]
-        session_id = create_session()
         turns = profile.turns[: config.max_turns]
-        pdf_path = None
-        if attachment_size_kb > 0:
-            pdf_path = FIXTURES_DIR / PDF_FILENAMES[attachment_size_kb]
-
-        for turn in turns:
-            payload, info = run_turn(session_id, profile, pdf_path, turn.transcript)
-            result = EstimationResult.model_validate(payload["result"])
-            snapshot = snapshot_from_session_info(
-                info,
-                estimation_summary=result.summary,
-            )
-            observability = payload.get("observability") or {}
-            drift_pass, drift_score, latency_pass, cost_pass, recall_pass = (
-                _evaluate_turn_metrics(
-                    profile=profile,
-                    turn_index=turn.turn_index,
-                    snapshot=snapshot,
-                    result=result,
-                    observability=observability,
-                    attachment_size_kb=attachment_size_kb,
-                    latency_budget_ms=config.latency_budget_ms,
-                    cost_budget_usd=config.cost_budget_usd,
-                )
-            )
-            rows.append(
-                _row_from_turn(
-                    run_id=run_id,
+        pending = [
+            turn
+            for turn in turns
+            if not csv_writer.is_done(
+                TurnMatrixKey(
                     scenario=profile.profile_id,
                     attachment_size_kb=attachment_size_kb,
                     repeat=repeat,
                     turn_index=turn.turn_index,
-                    session_id=session_id,
-                    observability=observability,
-                    memory_drift_pass=drift_pass,
-                    memory_drift_score=drift_score,
-                    latency_budget_pass=latency_pass,
-                    cost_budget_pass=cost_pass,
-                    attachment_recall_pass=recall_pass,
-                    estimation_cached=bool(payload.get("cached", False)),
                 )
             )
-            pdf_path = None
+        ]
+        if not pending:
+            return
 
-    if config.http_base:
-        with httpx.Client(base_url=config.http_base, timeout=300.0) as client:
-            for profile_id in config.scenarios:
-                profile = get_profile(profile_id)
-                for size_kb in config.attachment_sizes:
-                    for repeat in range(config.repeats):
+        session_id = create_session()
+        pdf_path = None
+        if attachment_size_kb > 0:
+            pdf_path = FIXTURES_DIR / PDF_FILENAMES[attachment_size_kb]
 
-                        def create_session() -> str:
-                            return client.post("/sessions").json()["session_id"]
+        for turn in pending:
+            try:
+                payload = run_turn(session_id, profile, pdf_path, turn.transcript)
+                info = get_session_info(session_id)
+                result = EstimationResult.model_validate(payload["result"])
+                snapshot = snapshot_from_session_info(
+                    info,
+                    estimation_summary=result.summary,
+                )
+                observability = payload.get("observability") or {}
+                drift_pass, drift_score, latency_pass, cost_pass, recall_pass = (
+                    _evaluate_turn_metrics(
+                        profile=profile,
+                        turn_index=turn.turn_index,
+                        snapshot=snapshot,
+                        result=result,
+                        observability=observability,
+                        attachment_size_kb=attachment_size_kb,
+                        latency_budget_ms=config.latency_budget_ms,
+                        cost_budget_usd=config.cost_budget_usd,
+                    )
+                )
+                _persist_row(
+                    _row_from_turn(
+                        run_id=run_id,
+                        scenario=profile.profile_id,
+                        attachment_size_kb=attachment_size_kb,
+                        repeat=repeat,
+                        turn_index=turn.turn_index,
+                        session_id=session_id,
+                        observability=observability,
+                        memory_drift_pass=drift_pass,
+                        memory_drift_score=drift_score,
+                        latency_budget_pass=latency_pass,
+                        cost_budget_pass=cost_pass,
+                        attachment_recall_pass=recall_pass,
+                        estimation_cached=bool(payload.get("cached", False)),
+                    )
+                )
+            except Exception as exc:  # noqa: BLE001
+                # Best-effort drift evaluation even if POST fails: GET session
+                # state may still contain previous turns' summary/anchors.
+                try:
+                    info = get_session_info(session_id)
+                except Exception:  # noqa: BLE001
+                    info = {}
 
-                        def run_turn(
-                            sid: str,
-                            prof: StressProfile,
-                            pdf: Path | None,
-                            transcript: str,
-                        ) -> tuple[dict, dict]:
-                            return _post_estimate_http(
-                                client, sid, transcript=transcript, profile=prof, pdf_path=pdf
-                            )
+                snapshot = snapshot_from_session_info(
+                    info,
+                    estimation_summary=None,
+                )
+                facts = facts_introduced_up_to(profile, turn.turn_index)
+                drift_pass, drift_score = evaluate_memory_drift(snapshot, facts)
 
-                        _run_session(create_session, run_turn, profile, size_kb, repeat)
-    else:
-        store_was_overridden = get_session_store not in app.dependency_overrides
-        if store_was_overridden:
-            eval_store = SessionStore(max_turns=6)
-            app.dependency_overrides[get_session_store] = lambda: eval_store
-        try:
-            with TestClient(app) as client:
+                http_status = None
+                if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None:
+                    http_status = exc.response.status_code
+
+                _persist_row(
+                    _row_from_turn(
+                        run_id=run_id,
+                        scenario=profile.profile_id,
+                        attachment_size_kb=attachment_size_kb,
+                        repeat=repeat,
+                        turn_index=turn.turn_index,
+                        session_id=session_id,
+                        observability={},
+                        memory_drift_pass=drift_pass,
+                        memory_drift_score=drift_score,
+                        latency_budget_pass=False,
+                        cost_budget_pass=False,
+                        attachment_recall_pass="",
+                        estimation_cached=False,
+                        http_status=http_status,
+                        error_type=type(exc).__name__,
+                        error_message=_truncate_error_message(str(exc)),
+                    )
+                )
+
+    try:
+        if config.http_base:
+            with httpx.Client(base_url=config.http_base, timeout=300.0) as client:
                 for profile_id in config.scenarios:
                     profile = get_profile(profile_id)
                     for size_kb in config.attachment_sizes:
@@ -363,39 +495,79 @@ def run_stress(config: StressRunConfig) -> list[dict[str, Any]]:
                             def create_session() -> str:
                                 return client.post("/sessions").json()["session_id"]
 
+                            def get_session_info(sid: str) -> dict[str, Any]:
+                                return client.get(f"/sessions/{sid}").json()
+
                             def run_turn(
                                 sid: str,
                                 prof: StressProfile,
                                 pdf: Path | None,
                                 transcript: str,
-                            ) -> tuple[dict, dict]:
-                                return _post_estimate_in_process(
-                                    client,
-                                    sid,
-                                    transcript=transcript,
-                                    profile=prof,
-                                    pdf_path=pdf,
+                            ) -> dict[str, Any]:
+                                return _post_estimate_http(
+                                    client, sid, transcript=transcript, profile=prof, pdf_path=pdf
                                 )
 
-                            _run_session(create_session, run_turn, profile, size_kb, repeat)
-        finally:
+                            _run_session(
+                                create_session,
+                                run_turn,
+                                get_session_info,
+                                profile,
+                                size_kb,
+                                repeat,
+                            )
+        else:
+            store_was_overridden = get_session_store not in app.dependency_overrides
             if store_was_overridden:
-                app.dependency_overrides.pop(get_session_store, None)
+                eval_store = SessionStore(max_turns=6)
+                app.dependency_overrides[get_session_store] = lambda: eval_store
+            try:
+                with TestClient(app) as client:
+                    for profile_id in config.scenarios:
+                        profile = get_profile(profile_id)
+                        for size_kb in config.attachment_sizes:
+                            for repeat in range(config.repeats):
 
-    _write_csv(config.output, rows)
+                                def create_session() -> str:
+                                    return client.post("/sessions").json()["session_id"]
+
+                                def get_session_info(sid: str) -> dict[str, Any]:
+                                    return client.get(f"/sessions/{sid}").json()
+
+                                def run_turn(
+                                    sid: str,
+                                    prof: StressProfile,
+                                    pdf: Path | None,
+                                    transcript: str,
+                                ) -> dict[str, Any]:
+                                    return _post_estimate_in_process(
+                                        client,
+                                        sid,
+                                        transcript=transcript,
+                                        profile=prof,
+                                        pdf_path=pdf,
+                                    )
+
+                                _run_session(
+                                    create_session,
+                                    run_turn,
+                                    get_session_info,
+                                    profile,
+                                    size_kb,
+                                    repeat,
+                                )
+            finally:
+                if store_was_overridden:
+                    app.dependency_overrides.pop(get_session_store, None)
+    finally:
+        csv_writer.close()
+
     if config.report is not None:
         from evals.stress.report import write_report
 
         write_report(config.output, config.report)
+
     return rows
-
-
-def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=CSV_FIELDNAMES)
-        writer.writeheader()
-        writer.writerows(rows)
 
 
 def main() -> int:
@@ -426,6 +598,11 @@ def main() -> int:
         help="Markdown report path (pass '' to skip)",
     )
     parser.add_argument("--http", default=None, help="Base URL for HTTP mode")
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Skip matrix cells already present in --output; append new rows",
+    )
     args = parser.parse_args()
 
     report_path = args.report if str(args.report) else None
@@ -439,9 +616,11 @@ def main() -> int:
         output=args.output,
         report=report_path,
         http_base=args.http,
+        resume=args.resume,
     )
     rows = run_stress(config)
-    print(f"Wrote {len(rows)} rows to {config.output}")
+    on_disk = len(_read_csv_rows(config.output)) if config.output.exists() else 0
+    print(f"Wrote {on_disk} rows to {config.output} ({len(rows)} new this run)")
     if config.report:
         print(f"Report written to {config.report}")
     return 0

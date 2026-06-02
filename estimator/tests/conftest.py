@@ -63,6 +63,7 @@ class FakeLLMWrapper:
         self.scripted: list[tuple[EstimationResult, ProjectMetadata]] = []
         self._turn = 0
         self._extra_factories: dict[type, callable] = {}
+        self._turn_usage = None
 
     def add_turn(
         self,
@@ -73,6 +74,22 @@ class FakeLLMWrapper:
         self.scripted.append(
             (result or make_canned_result(), metadata or ProjectMetadata())
         )
+
+    def begin_turn_observation(self) -> None:
+        from app.services.llm_wrapper import TurnUsageAccumulator
+
+        self._turn_usage = TurnUsageAccumulator()
+
+    def consume_turn_observation_meta(self) -> dict:
+        if self._turn_usage is None:
+            return {}
+        meta = self._turn_usage.to_meta()
+        self._turn_usage = None
+        return meta
+
+    def _record_turn_usage(self, meta: dict) -> None:
+        if self._turn_usage is not None:
+            self._turn_usage.add(meta)
 
     def register_response_for(self, schema: type, factory) -> None:
         """Register a factory that produces an instance of ``schema``.
@@ -120,6 +137,7 @@ class FakeLLMWrapper:
                 self.scripted.append((make_canned_result(), ProjectMetadata()))
             result, _metadata = self.scripted[idx]
             self._turn += 1
+            self._record_turn_usage(meta)
             return result, meta
 
         if response_model is ProjectMetadata:
@@ -128,13 +146,18 @@ class FakeLLMWrapper:
                 self.scripted.append((make_canned_result(), ProjectMetadata()))
             _result, metadata = self.scripted[idx]
             self._turn += 1
+            self._record_turn_usage(meta)
             return metadata, meta
 
         # Third-party schemas (summary envelope, critic feedback, …).
         factory = self._extra_factories.get(response_model)
         if factory is not None:
-            return factory(), meta
-        return self._default_for(response_model), meta
+            out = factory(), meta
+            self._record_turn_usage(meta)
+            return out
+        out = self._default_for(response_model), meta
+        self._record_turn_usage(meta)
+        return out
 
 
 @pytest.fixture

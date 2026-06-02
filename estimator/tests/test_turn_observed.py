@@ -93,10 +93,11 @@ def test_turn_observed_emitted_once_per_turn_with_all_fields(
     assert second["messages_in_window"] == 4
     assert first["anchors_count"] == 0
     assert first["summary_chars"] == 0
-    assert first["tokens_in"] == 100
-    assert first["tokens_out"] == 50
-    assert first["cost_usd"] == pytest.approx(0.0001)
-    assert first["latency_ms"] == 1
+    # Actor + metadata extractor (two LLM calls per turn).
+    assert first["tokens_in"] == 200
+    assert first["tokens_out"] == 100
+    assert first["cost_usd"] == pytest.approx(0.0002)
+    assert first["latency_ms"] == 2
     assert first["cache_hit_kind"] == "none"
     assert first["last_resolved_tier"] is not None
     assert session.turn_count == 2
@@ -128,7 +129,8 @@ def test_turn_observed_via_http_two_turns(
     assert body1["observability"] is not None
     assert body1["observability"]["turn_index"] == 1
     assert body1["observability"]["session_id"] == session_id
-    assert body1["observability"]["latency_ms"] == 1
+    assert body1["observability"]["latency_ms"] == 2
+    assert body1["observability"]["tokens_in"] == 200
     body2 = r2.json()
     assert body2["observability"]["turn_index"] == 2
 

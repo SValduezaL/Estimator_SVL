@@ -5,7 +5,12 @@ import fakeredis
 import pytest
 
 from app.services.cache import EstimationCache
-from app.services.llm_wrapper import LLMWrapper, _estimate_cost
+from app.services.llm_wrapper import (
+    LLMWrapper,
+    TurnUsageAccumulator,
+    _estimate_cost,
+    _pricing_model_key,
+)
 
 
 def _fake_completion(model: str, content: str = "the answer", input_tokens: int = 100, output_tokens: int = 50):
@@ -44,6 +49,44 @@ def test_estimate_cost_uses_pricing_table() -> None:
     cost = _estimate_cost("gpt-4o-mini", 1_000_000, 1_000_000)
     # 1M input * 0.15 + 1M output * 0.60 = 0.75 USD
     assert cost == pytest.approx(0.75)
+
+
+def test_pricing_model_key_maps_versioned_openai_snapshots() -> None:
+    assert _pricing_model_key("gpt-4o-2024-08-06") == "gpt-4o"
+    assert _pricing_model_key("openai/gpt-4o-2024-08-06") == "gpt-4o"
+    assert _pricing_model_key("gpt-4o-mini-2024-07-18") == "gpt-4o-mini"
+
+
+def test_estimate_cost_versioned_gpt4o_nonzero() -> None:
+    cost = _estimate_cost("gpt-4o-2024-08-06", 19_893, 1_356)
+    assert cost == pytest.approx(0.063293, rel=1e-4)
+
+
+def test_turn_usage_accumulator_sums_calls() -> None:
+    acc = TurnUsageAccumulator()
+    acc.add(
+        {
+            "tokens_in": 100,
+            "tokens_out": 50,
+            "cost_usd": 0.01,
+            "latency_ms": 10,
+            "model": "gpt-4o",
+        }
+    )
+    acc.add(
+        {
+            "tokens_in": 20,
+            "tokens_out": 10,
+            "cost_usd": 0.001,
+            "latency_ms": 5,
+            "model": "gpt-4o-mini",
+        }
+    )
+    meta = acc.to_meta()
+    assert meta["tokens_in"] == 120
+    assert meta["tokens_out"] == 60
+    assert meta["cost_usd"] == pytest.approx(0.011)
+    assert meta["latency_ms"] == 15
 
 
 def test_complete_returns_normalised_dict_and_caches(wrapper: LLMWrapper) -> None:

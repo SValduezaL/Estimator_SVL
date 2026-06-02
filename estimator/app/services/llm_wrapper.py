@@ -16,6 +16,7 @@ Design notes
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
 import instructor
@@ -38,19 +39,72 @@ MODEL_COSTS: dict[str, dict[str, float]] = {
     "claude-sonnet-4-5": {"input": 3.00, "output": 15.00},
 }
 
+# Longest / most specific prefixes first (gpt-4o-mini before gpt-4o).
+_PRICING_PREFIXES: tuple[tuple[str, str], ...] = (
+    ("gpt-4o-mini", "gpt-4o-mini"),
+    ("gpt-4o", "gpt-4o"),
+    ("claude-sonnet-4-5", "claude-sonnet-4-5"),
+    ("claude-haiku-4-5-20251001", "claude-haiku-4-5-20251001"),
+    ("claude-haiku-4-5", "claude-haiku-4-5"),
+)
+
 
 T = TypeVar("T", bound=BaseModel)
 
 
+@dataclass
+class TurnUsageAccumulator:
+    """Sums tokens, cost and wall latency across LLM calls in one conversational turn."""
+
+    tokens_in: int = 0
+    tokens_out: int = 0
+    cost_usd: float = 0.0
+    latency_ms: int = 0
+    models: list[str] = field(default_factory=list)
+
+    def add(self, meta: dict[str, Any]) -> None:
+        self.tokens_in += int(meta.get("tokens_in", 0) or 0)
+        self.tokens_out += int(meta.get("tokens_out", 0) or 0)
+        self.cost_usd += float(meta.get("cost_usd", 0.0) or 0.0)
+        self.latency_ms += int(meta.get("latency_ms", 0) or 0)
+        model = meta.get("model")
+        if model:
+            self.models.append(str(model))
+
+    def to_meta(self) -> dict[str, Any]:
+        return {
+            "tokens_in": self.tokens_in,
+            "tokens_out": self.tokens_out,
+            "cost_usd": round(self.cost_usd, 6),
+            "latency_ms": self.latency_ms,
+            "model": self.models[-1] if self.models else None,
+        }
+
+
+def _strip_provider_prefix(model: str) -> str:
+    return model.split("/", 1)[1] if "/" in model else model
+
+
+def _pricing_model_key(model: str) -> str:
+    """Map API snapshot ids (e.g. ``gpt-4o-2024-08-06``) to a ``MODEL_COSTS`` key."""
+    name = _strip_provider_prefix(model)
+    if name in MODEL_COSTS:
+        return name
+    for prefix, key in _PRICING_PREFIXES:
+        if name == prefix or name.startswith(f"{prefix}-"):
+            return key
+    return name
+
+
 def _estimate_cost(model: str, tokens_in: int, tokens_out: int) -> float:
-    base = _normalise_model_name(model)
-    costs = MODEL_COSTS.get(base) or MODEL_COSTS.get(model) or {"input": 0.0, "output": 0.0}
+    key = _pricing_model_key(model)
+    costs = MODEL_COSTS.get(key, {"input": 0.0, "output": 0.0})
     return round((tokens_in * costs["input"] + tokens_out * costs["output"]) / 1_000_000, 6)
 
 
 def _normalise_model_name(model: str) -> str:
-    """Strip provider prefixes like ``anthropic/`` that LiteLLM may emit."""
-    return model.split("/", 1)[1] if "/" in model else model
+    """Strip provider prefix and collapse versioned snapshots to a family key."""
+    return _pricing_model_key(model)
 
 
 def _provider_from_model(model: str) -> str:
@@ -110,10 +164,27 @@ class LLMWrapper:
         # Instructor wraps ``litellm.completion`` so we can call any of the
         # underlying providers with the same ``response_model=`` API.
         self._instructor = instructor.from_litellm(litellm.completion)
+        self._turn_usage: TurnUsageAccumulator | None = None
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+
+    def begin_turn_observation(self) -> None:
+        """Start accumulating usage for all LLM calls until ``consume_turn_observation_meta``."""
+        self._turn_usage = TurnUsageAccumulator()
+
+    def consume_turn_observation_meta(self) -> dict[str, Any]:
+        """Return summed usage for the current turn and reset the accumulator."""
+        if self._turn_usage is None:
+            return {}
+        meta = self._turn_usage.to_meta()
+        self._turn_usage = None
+        return meta
+
+    def _record_turn_usage(self, meta: dict[str, Any]) -> None:
+        if self._turn_usage is not None:
+            self._turn_usage.add(meta)
 
     def complete(
         self,
@@ -246,6 +317,7 @@ class LLMWrapper:
             cost_usd=meta["cost_usd"],
             latency_ms=latency_ms,
         )
+        self._record_turn_usage(meta)
         return result, meta
 
     def complete_structured(
@@ -318,6 +390,7 @@ class LLMWrapper:
             cost_usd=meta["cost_usd"],
             latency_ms=latency_ms,
         )
+        self._record_turn_usage(meta)
         return result, meta
 
     # ------------------------------------------------------------------

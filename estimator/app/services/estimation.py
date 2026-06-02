@@ -172,9 +172,14 @@ class EstimationService:
             "estimation_generated",
             prompt_version=self.prompt_version,
             confidence_pct=result.confidence_pct,
-            total_cost_eur=result.total_cost_eur,
+            project_total_cost_eur=result.total_cost_eur,
             phases=len(result.phases),
-            **meta,
+            llm_cost_usd=meta.get("cost_usd"),
+            llm_tokens_in=meta.get("tokens_in"),
+            llm_tokens_out=meta.get("tokens_out"),
+            llm_latency_ms=meta.get("latency_ms"),
+            llm_model=meta.get("model"),
+            llm_provider=meta.get("provider"),
         )
 
         # 6. Output guardrail (filter): normalises low-confidence answers.
@@ -259,50 +264,59 @@ class EstimationService:
             transcript_chars=len(transcript),
         )
 
-        # 4. LLM call with Instructor + Pydantic validators.
-        result, meta = self.llm_wrapper.complete_structured_chat(
-            messages=messages,
-            response_model=EstimationResult,
-        )
-        log.info(
-            "estimation_conversational_generated",
-            session_id=session.session_id,
-            confidence_pct=result.confidence_pct,
-            total_cost_eur=result.total_cost_eur,
-            phases=len(result.phases),
-            **meta,
-        )
+        self.llm_wrapper.begin_turn_observation()
+        try:
+            # 4. LLM call with Instructor + Pydantic validators.
+            result, actor_meta = self.llm_wrapper.complete_structured_chat(
+                messages=messages,
+                response_model=EstimationResult,
+            )
+            log.info(
+                "estimation_conversational_generated",
+                session_id=session.session_id,
+                confidence_pct=result.confidence_pct,
+                project_total_cost_eur=result.total_cost_eur,
+                phases=len(result.phases),
+                llm_cost_usd_actor=actor_meta.get("cost_usd"),
+                llm_tokens_in_actor=actor_meta.get("tokens_in"),
+                llm_tokens_out_actor=actor_meta.get("tokens_out"),
+                llm_latency_ms_actor=actor_meta.get("latency_ms"),
+                llm_model_actor=actor_meta.get("model"),
+                llm_provider_actor=actor_meta.get("provider"),
+            )
 
-        # 5. Output guardrail (filter policy: normalises low-confidence answers).
-        result = enforce_scope_response(result)
+            # 5. Output guardrail (filter policy: normalises low-confidence answers).
+            result = enforce_scope_response(result)
 
-        # 6. Append the turn to the history. The append is a pure data
-        #    operation now — compression (anchor promotion + cumulative
-        #    summary + sliding window) is the next, explicit step.
-        session.history.append(user=user_message, assistant=result.model_dump_json())
-        apply_compression(
-            session.history,
-            llm_wrapper=self.llm_wrapper,
-            compression_model=self.compression_model,
-            anchor_detection_mode=self.anchor_detection_mode,
-        )
+            # 6. Append the turn to the history. The append is a pure data
+            #    operation now — compression (anchor promotion + cumulative
+            #    summary + sliding window) is the next, explicit step.
+            session.history.append(user=user_message, assistant=result.model_dump_json())
+            apply_compression(
+                session.history,
+                llm_wrapper=self.llm_wrapper,
+                compression_model=self.compression_model,
+                anchor_detection_mode=self.anchor_detection_mode,
+            )
 
-        # 7. Second-pass extractor refreshes ProjectMetadata. Failure is
-        #    swallowed inside update_metadata (returns previous unchanged).
-        session.metadata = update_metadata(
-            previous=session.metadata,
-            transcript=transcript,
-            result=result,
-            llm_wrapper=self.llm_wrapper,
-            model=self.metadata_extractor_model,
-        )
+            # 7. Second-pass extractor refreshes ProjectMetadata. Failure is
+            #    swallowed inside update_metadata (returns previous unchanged).
+            session.metadata = update_metadata(
+                previous=session.metadata,
+                transcript=transcript,
+                result=result,
+                llm_wrapper=self.llm_wrapper,
+                model=self.metadata_extractor_model,
+            )
+        finally:
+            turn_meta = self.llm_wrapper.consume_turn_observation_meta()
 
         session.turn_count += 1
         observability = _emit_turn_observed(
             session=session,
             enriched_transcript_chars=len(transcript),
             attachments_total_chars=attachments_total_chars,
-            meta=meta,
+            meta=turn_meta,
         )
 
         return EstimationResponse(
