@@ -1,5 +1,6 @@
 """Pipeline de chunking y embeddings (S7)."""
 
+from ai_service.app.embedding_pipeline.chunker import JSONStructuralChunker
 from ai_service.app.embedding_pipeline.schemas import (
     Budget,
     BudgetComponent,
@@ -18,4 +19,5 @@ __all__ = [
     "IngestRequest",
     "IngestResponse",
     "IngestStats",
+    "JSONStructuralChunker",
 ]
