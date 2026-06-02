@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     app_name: str = Field(default="Estimador CAG API", min_length=3)
     app_env: Literal["dev", "staging", "prod"] = "dev"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "DEBUG"
+    
+    # LLM
     llm_provider: str = "openai"
     llm_model: str = "gpt-4o-mini"
     llm_models_by_provider: dict[str, list[str]] = Field(
@@ -24,19 +26,21 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     temperature: float = Field(default=0.2, ge=0.0, le=1.0)
     max_tokens: int = Field(default=2000, ge=100, le=4000)
+    
     # Fallback LiteLLM (opcional): segundo despliegue bajo el mismo route ``estimator``.
-    llm_fallback_model: str | None = Field(default=None)
-    llm_timeout_seconds: int = Field(default=120, ge=5, le=600)
+    llm_fallback_model: str | None = Field(default="claude-haiku-4-5-20251001")
+    llm_timeout_seconds: int = Field(default=30, ge=5, le=600)
     llm_num_retries: int = Field(default=2, ge=0, le=10)
+    
     # Caché Redis (opcional): vacío = sin caché; p. ej. redis://redis:6379/0 en Compose
     redis_url: str | None = Field(default=None)
     cache_ttl_seconds: int = Field(default=86400, ge=60, le=604800)
 
     # Caché semántica (Redis Stack + embeddings; requiere RediSearch)
     semantic_cache_enabled: bool = Field(default=False)
-    semantic_cache_threshold: float = Field(default=0.92, ge=0.0, le=1.0)
-    semantic_cache_log_only: bool = Field(default=True)
-    semantic_cache_ttl_seconds: int | None = Field(default=None, ge=60, le=604800)
+    semantic_cache_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
+    semantic_cache_log_only: bool = Field(default=False)
+    semantic_cache_ttl_seconds: int | None = Field(default=86400, ge=60, le=604800)
     semantic_cache_max_results: int = Field(default=3, ge=1, le=20)
     semantic_cache_index_name: str = Field(default="estimations_v1")
     semantic_cache_key_prefix: str = Field(default="estimation:semantic:v1")
@@ -64,6 +68,12 @@ class Settings(BaseSettings):
     guardrails_max_eur_per_hour: float = Field(default=250.0, ge=1.0, le=2000.0)
     guardrails_hours_per_week: int = Field(default=40, ge=1, le=80)
     guardrails_prompt_max_chars: int = Field(default=120_000, ge=10_000, le=500_000)
+    
+    # Attachments
+    attachments_enabled: bool = Field(default=True)
+    attachments_max_files: int = Field(default=5, ge=1, le=20)
+    attachments_max_file_size_mb: int = Field(default=10, ge=1, le=100)
+    attachments_max_chars_per_file: int = Field(default=12_000, ge=500, le=200_000)
 
     model_config = SettingsConfigDict(
         env_file=".env",

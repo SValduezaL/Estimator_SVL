@@ -17,8 +17,8 @@ from app.logging.processors import (
 )
 
 
-def _shared_processors() -> list[Processor]:
-    return [
+def _shared_processors(*, json_logs: bool) -> list[Processor]:
+    processors: list[Processor] = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_log_level,
         structlog.stdlib.add_logger_name,
@@ -27,8 +27,12 @@ def _shared_processors() -> list[Processor]:
         add_otel_context,
         add_service_context,
         redact_sensitive,
-        structlog.processors.format_exc_info,
     ]
+    # En salida de consola (dev/test), ConsoleRenderer ya formatea excepciones
+    # y mantener format_exc_info dispara warnings de structlog.
+    if json_logs:
+        processors.append(structlog.processors.format_exc_info)
+    return processors
 
 
 def configure_logging(settings: Settings, *, version: str = "0.1.0") -> None:
@@ -49,7 +53,7 @@ def configure_logging(settings: Settings, *, version: str = "0.1.0") -> None:
     structlog.configure(
         processors=[
             structlog.stdlib.filter_by_level,
-            *_shared_processors(),
+            *_shared_processors(json_logs=json_logs),
             structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
         ],
         wrapper_class=structlog.stdlib.BoundLogger,
@@ -58,7 +62,7 @@ def configure_logging(settings: Settings, *, version: str = "0.1.0") -> None:
     )
 
     formatter = structlog.stdlib.ProcessorFormatter(
-        foreign_pre_chain=_shared_processors(),
+        foreign_pre_chain=_shared_processors(json_logs=json_logs),
         processors=[
             structlog.stdlib.ProcessorFormatter.remove_processors_meta,
             renderer,

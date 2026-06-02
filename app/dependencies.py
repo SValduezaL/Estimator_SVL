@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ssl
 from typing import Any
 
 from fastapi import Depends
@@ -80,8 +81,9 @@ def get_async_openai_client(
             import httpx
             from openai import AsyncOpenAI
 
+            ssl_context = ssl.create_default_context(cafile=certifi.where())
             http_client = httpx.AsyncClient(
-                verify=certifi.where(),
+                verify=ssl_context,
                 timeout=httpx.Timeout(120.0, connect=15.0),
             )
             _async_openai_client = AsyncOpenAI(

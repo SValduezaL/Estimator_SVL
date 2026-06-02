@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import uuid
 from typing import Any
+from collections.abc import Mapping
 
 import httpx
 
@@ -59,14 +60,15 @@ class BaseApiClient:
         path: str,
         *,
         json: dict[str, Any] | None = None,
+        data: Mapping[str, Any] | None = None,
+        files: list[tuple[str, tuple[str, bytes, str]]] | None = None,
         request_id: str | None = None,
     ) -> tuple[dict[str, Any], httpx.Response]:
         url = f"{self._base_url}{path}"
         rid = request_id or str(uuid.uuid4())
-        headers = {
-            "Content-Type": "application/json",
-            "X-Request-ID": rid,
-        }
+        headers = {"X-Request-ID": rid}
+        if json is not None and files is None:
+            headers["Content-Type"] = "application/json"
         last_exc: Exception | None = None
 
         for attempt in range(self._max_retries + 1):
@@ -81,7 +83,14 @@ class BaseApiClient:
                     },
                 )
                 with httpx.Client(timeout=self._timeout) as client:
-                    response = client.request(method, url, json=json, headers=headers)
+                    response = client.request(
+                        method,
+                        url,
+                        json=json,
+                        data=data,
+                        files=files,
+                        headers=headers,
+                    )
                 if response.status_code >= 400:
                     detail = _extract_detail(response)
                     raise ApiError(

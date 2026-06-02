@@ -119,6 +119,25 @@ async def create_estimation(
     openai_client=Depends(get_openai_moderation_client),
     metadata_client: Any | None = Depends(get_async_openai_client),
 ) -> EstimationResponse:
+    return await run_estimation_pipeline(
+        request=request,
+        settings=settings,
+        wrapper=wrapper,
+        orchestrator=orchestrator,
+        openai_client=openai_client,
+        metadata_client=metadata_client,
+    )
+
+
+async def run_estimation_pipeline(
+    *,
+    request: EstimationRequest,
+    settings: Settings,
+    wrapper: LLMWrapper,
+    orchestrator: EstimationCacheOrchestrator | None,
+    openai_client: Any | None,
+    metadata_client: Any | None,
+) -> EstimationResponse:
     """Genera una estimación estructurada y devuelve ``result`` + métricas."""
     log.info(
         "estimation_requested",

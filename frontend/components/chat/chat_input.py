@@ -36,6 +36,7 @@ def _submit_estimation(
     active: str,
     estimation_client: EstimationClient,
     session_client: SessionClient,
+    attachments: list[Any] | None = None,
 ) -> None:
     desc = description.strip()
     if len(desc) < MIN_DESCRIPTION_LEN:
@@ -53,6 +54,10 @@ def _submit_estimation(
         return
 
     payload = req.model_dump(mode="json")
+    uploads_payload: list[tuple[str, bytes, str]] = []
+    for file in attachments or []:
+        content_type = getattr(file, "type", None) or "application/octet-stream"
+        uploads_payload.append((file.name, file.getvalue(), content_type))
     clear_api_error()
 
     metadata_before: dict[str, Any] = {}
@@ -68,7 +73,16 @@ def _submit_estimation(
     t0 = time.perf_counter()
     try:
         with st.spinner("Generando estimación…"):
-            data, http_resp = estimation_client.estimate(payload)
+            if uploads_payload:
+                data, http_resp = estimation_client.estimate_for_session_with_attachments(
+                    session_id=active,
+                    description=payload["description"],
+                    project_type=payload["project_type"],
+                    detail_level=payload["detail_level"],
+                    attachments=uploads_payload,
+                )
+            else:
+                data, http_resp = estimation_client.estimate(payload)
         latency = time.perf_counter() - t0
         request_id = http_resp.headers.get("X-Request-ID")
 
@@ -129,6 +143,11 @@ def render_chat_input(
             placeholder="Describe alcance, stack, restricciones o cambios (mín. 20 caracteres)…",
             label_visibility="collapsed",
         )
+        attachments = st.file_uploader(
+            "Adjuntos (PDF/DOCX)",
+            type=["pdf", "docx"],
+            accept_multiple_files=True,
+        )
         submitted = st.form_submit_button("Enviar estimación", type="primary", use_container_width=True)
 
     if submitted and description:
@@ -139,4 +158,5 @@ def render_chat_input(
             active=active,
             estimation_client=estimation_client,
             session_client=session_client,
+            attachments=attachments,
         )
