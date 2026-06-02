@@ -832,13 +832,15 @@ docker compose -f docker-compose-dev.yml exec ai_service \
   --text-b "JWT-based authorization service for banking app"
 ```
 
-Salida esperada (formato):
+Salida esperada (formato; el valor numérico depende de los textos y del modelo):
 
 ```
 Text A: OAuth 2.0 authentication backend for fintech
 Text B: JWT-based authorization service for banking app
 Cosine similarity: 0.6329
 ```
+
+**Sanity check (Paso 7):** tres parejas de control con resultados documentados en [`ai_service/app/embedding_pipeline/SANITY_CHECK.md`](ai_service/app/embedding_pipeline/SANITY_CHECK.md) (parejas A/B/C del enunciado; similitudes medidas ~0.60 / ~0.19 / ~0.54).
 
 ### Docker Compose — solo `ai_service`
 
