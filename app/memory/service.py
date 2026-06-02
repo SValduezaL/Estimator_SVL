@@ -7,9 +7,12 @@ from typing import Any
 import structlog
 
 from app.memory.constants import MAX_HISTORY_TURNS
+from app.memory.anchors import update_anchors_from_turn
+from app.memory.compression_policy import CompressionPolicy
 from app.memory.exceptions import MetadataExtractionError
 from app.memory.extractor import update_metadata_llm
 from app.memory.models import Message, ProjectMetadata, Session
+from app.memory.summary import update_running_summary_llm
 from app.memory.store import update_session
 from app.schemas.estimation_output import EstimationResult
 
@@ -57,6 +60,16 @@ def apply_sliding_window(
     return flattened
 
 
+def apply_sliding_window_with_removed(
+    history: list[Message],
+    max_turns: int = MAX_HISTORY_TURNS,
+) -> tuple[list[Message], list[Message]]:
+    kept = apply_sliding_window(history, max_turns=max_turns)
+    removed_count = max(0, len(history) - len(kept))
+    removed = history[:removed_count]
+    return kept, removed
+
+
 def history_to_llm_messages(history: list[Message]) -> list[dict[str, str]]:
     """Convierte historial de sesión a mensajes para el LLM principal."""
     return [
@@ -78,13 +91,15 @@ def append_turn(
     assistant_content: str,
 ) -> Session:
     """Añade un turno user/assistant y aplica ventana deslizante al historial."""
+    previous_history = list(session.history)
     session.history.extend(
         [
             Message(role="user", content=user_content),
             Message(role="assistant", content=assistant_content),
         ]
     )
-    session.history = apply_sliding_window(session.history)
+    session.history, removed = apply_sliding_window_with_removed(session.history)
+    session.__dict__["_removed_messages"] = [*previous_history[:0], *removed]
     return session
 
 
@@ -121,10 +136,12 @@ async def persist_estimation_turn(
     user_turn: str,
     result: EstimationResult,
     client: Any,
-) -> tuple[Session, dict[str, Any]]:
+    summary_model: str = "gpt-4o-mini",
+) -> tuple[Session, dict[str, Any], dict[str, Any]]:
     """Registra turno, actualiza metadata y persiste la sesión."""
     assistant_turn = result.model_dump_json()
     append_turn(session, user_content=user_turn, assistant_content=assistant_turn)
+    update_anchors_from_turn(session, user_turn=user_turn)
     extraction_metrics: dict[str, Any] = {
         "executed": False,
         "degraded": True,
@@ -133,6 +150,16 @@ async def persist_estimation_turn(
         "output_tokens": 0,
         "total_tokens": 0,
         "model": None,
+        "latency_ms": None,
+    }
+    summary_metrics: dict[str, Any] = {
+        "executed": False,
+        "degraded": False,
+        "cost_usd": 0.0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "model": summary_model,
         "latency_ms": None,
     }
     try:
@@ -154,4 +181,15 @@ async def persist_estimation_turn(
         )
         extraction_metrics["degraded"] = True
         extraction_metrics["error"] = str(exc)
-    return update_session(session), extraction_metrics
+
+    removed = CompressionPolicy.apply(
+        removed_messages=list(session.__dict__.pop("_removed_messages", [])),
+        anchors=session.anchors,
+    )
+    session, summary_metrics = await update_running_summary_llm(
+        session,
+        removed_messages=removed,
+        client=client,
+        model=summary_model,
+    )
+    return update_session(session), extraction_metrics, summary_metrics

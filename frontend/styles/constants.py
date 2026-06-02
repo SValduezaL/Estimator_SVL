@@ -14,5 +14,6 @@ TAB_PROMPT = "Prompt"
 
 CALL_ESTIMATION = "estimation"
 CALL_MEMORY_EXTRACTION = "memory_extraction"
+CALL_SUMMARY_COMPRESSION = "summary_compression"
 CALL_GUARDRAILS = "guardrails"
 CALL_CACHE_EMBEDDING = "cache_embedding"

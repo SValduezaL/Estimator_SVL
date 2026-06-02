@@ -9,6 +9,7 @@ from frontend.styles.constants import (
     CALL_ESTIMATION,
     CALL_GUARDRAILS,
     CALL_MEMORY_EXTRACTION,
+    CALL_SUMMARY_COMPRESSION,
 )
 
 
@@ -52,6 +53,7 @@ def parse_estimation_metrics(
             base["cost_breakdown"] = {
                 CALL_ESTIMATION: float(costs.get("estimation_usd", base["cost_usd"])),
                 CALL_MEMORY_EXTRACTION: float(costs.get("memory_extraction_usd", 0.0)),
+                CALL_SUMMARY_COMPRESSION: float(costs.get("summary_compression_usd", 0.0)),
                 CALL_GUARDRAILS: float(costs.get("guardrails_usd", 0.0)),
                 CALL_CACHE_EMBEDDING: float(costs.get("cache_embedding_usd", 0.0)),
             }
@@ -64,6 +66,7 @@ def parse_estimation_metrics(
                 base["cost_breakdown"] = {
                     CALL_ESTIMATION: float(costs.get("estimation_usd", base["cost_usd"])),
                     CALL_MEMORY_EXTRACTION: float(costs.get("memory_extraction_usd", 0.0)),
+                CALL_SUMMARY_COMPRESSION: float(costs.get("summary_compression_usd", 0.0)),
                     CALL_GUARDRAILS: float(costs.get("guardrails_usd", 0.0)),
                     CALL_CACHE_EMBEDDING: float(costs.get("cache_embedding_usd", 0.0)),
                 }
@@ -77,6 +80,7 @@ def parse_estimation_metrics(
             base["cost_breakdown"] = {
                 CALL_ESTIMATION: base["cost_usd"],
                 CALL_MEMORY_EXTRACTION: 0.0,
+                CALL_SUMMARY_COMPRESSION: 0.0,
                 CALL_GUARDRAILS: 0.0,
                 CALL_CACHE_EMBEDDING: 0.0,
             }
@@ -161,6 +165,7 @@ def total_cost_from_response(response: dict[str, Any]) -> float:
                     for key in (
                         "estimation_usd",
                         "memory_extraction_usd",
+                        "summary_compression_usd",
                         "guardrails_usd",
                         "cache_embedding_usd",
                     )
@@ -213,6 +218,25 @@ def build_operation_call_log_entries(
                 "cost_usd": float(costs.get("memory_extraction_usd", 0.0)),
                 "latency_ms": mem_usage.get("latency_ms"),
                 "degraded": bool(operations.get("memory_extraction_degraded")),
+            }
+        )
+
+    summary_usage = operations.get("summary_compression") or {}
+    if not isinstance(summary_usage, dict):
+        summary_usage = {}
+    if operations.get("summary_compression_executed"):
+        entries.append(
+            {
+                **common,
+                "call_type": CALL_SUMMARY_COMPRESSION,
+                "endpoint": "internal/summary_compression",
+                "model": summary_usage.get("model") or "gpt-4o-mini",
+                "input_tokens": int(summary_usage.get("input_tokens", 0)),
+                "output_tokens": int(summary_usage.get("output_tokens", 0)),
+                "total_tokens": int(summary_usage.get("total_tokens", 0)),
+                "cost_usd": float(costs.get("summary_compression_usd", 0.0)),
+                "latency_ms": summary_usage.get("latency_ms"),
+                "degraded": bool(operations.get("summary_compression_degraded")),
             }
         )
 

@@ -77,6 +77,8 @@ def register_session(
             "metadata_current": {},
             "metadata_history": [],
             "memory_traces": [],
+            "anchors": [],
+            "running_summary": {},
             "total_cost_usd": 0.0,
             "message_count": 0,
             "cache_hits": 0,
@@ -124,6 +126,12 @@ def update_session_from_api(session_id: str, api_session: dict[str, Any]) -> Non
     history = api_session.get("history") or []
     if isinstance(history, list):
         rec["server_history_len"] = len(history)
+    anchors = api_session.get("anchors") or []
+    if isinstance(anchors, list):
+        rec["anchors"] = anchors
+    running_summary = api_session.get("running_summary")
+    if isinstance(running_summary, dict):
+        rec["running_summary"] = running_summary
 
 
 def append_chat_turn(
@@ -169,6 +177,10 @@ def append_chat_turn(
         float(st.session_state.get("global_total_cost_usd", 0.0)) + turn_total
     )
     rec["last_operations"] = estimation_response.get("operations")
+    if isinstance(rec["last_operations"], dict):
+        tier_decision = rec["last_operations"].get("tier_decision")
+        if isinstance(tier_decision, dict):
+            rec["last_tier_decision"] = tier_decision
 
     if metrics_row.get("cache_hit"):
         rec["cache_hits"] += 1

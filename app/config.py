@@ -74,6 +74,18 @@ class Settings(BaseSettings):
     attachments_max_files: int = Field(default=5, ge=1, le=20)
     attachments_max_file_size_mb: int = Field(default=10, ge=1, le=100)
     attachments_max_chars_per_file: int = Field(default=12_000, ge=500, le=200_000)
+    
+    # Memory
+    memory_anchors_enabled: bool = Field(default=True)
+    memory_anchors_max_items: int = Field(default=20, ge=1, le=200)
+    memory_summary_enabled: bool = Field(default=True)
+    memory_summary_max_chars: int = Field(default=4000, ge=200, le=20000)
+    memory_summary_model: str = Field(default="gpt-4o-mini")
+    memory_summary_timeout_seconds: int = Field(default=60, ge=5, le=300)
+    memory_summary_max_retries: int = Field(default=1, ge=0, le=5)
+    
+    # Tier Rules
+    tier_rules_enabled: bool = Field(default=True)
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -15,6 +15,7 @@ from frontend.styles.constants import (
     CALL_ESTIMATION,
     CALL_GUARDRAILS,
     CALL_MEMORY_EXTRACTION,
+    CALL_SUMMARY_COMPRESSION,
 )
 from frontend.utils.cost_utils import aggregate_call_log, cost_timeline
 from frontend.utils.formatting import format_usd
@@ -42,6 +43,7 @@ def render_metrics_dashboard() -> None:
                 "all",
                 CALL_ESTIMATION,
                 CALL_MEMORY_EXTRACTION,
+                CALL_SUMMARY_COMPRESSION,
                 CALL_GUARDRAILS,
                 CALL_CACHE_EMBEDDING,
             ],

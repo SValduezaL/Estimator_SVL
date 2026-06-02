@@ -27,6 +27,22 @@ def render_memory_panel() -> None:
     metadata = rec.get("metadata_current") or {}
     st.markdown("### Estado actual (`project_metadata`)")
     render_metadata_cards(metadata)
+    running_summary = rec.get("running_summary") or {}
+    anchors = rec.get("anchors") or []
+    tier_decision = rec.get("last_tier_decision") or {}
+    if running_summary:
+        st.markdown("### Resumen acumulativo")
+        st.code(running_summary.get("text", ""), language="text")
+    if anchors:
+        st.markdown("### Anclas activas")
+        for anchor in anchors[:5]:
+            if isinstance(anchor, dict):
+                st.markdown(f"- {anchor.get('fact', '—')}")
+    if tier_decision:
+        st.caption(
+            f"Tier último turno: {tier_decision.get('tier', 'default')} · "
+            f"Regla: {tier_decision.get('rule_id', '—')}"
+        )
 
     st.divider()
     st.markdown("### Evolución de la memoria")

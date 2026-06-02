@@ -30,6 +30,13 @@ class DetailLevel(str, Enum):
     DETAILED = "detailed"
 
 
+class Tier(str, Enum):
+    EXECUTIVE = "executive"
+    PM = "pm"
+    DEVELOPER = "developer"
+    DEFAULT = "default"
+
+
 PROJECT_TYPE_LABELS: dict[ProjectType, str] = {
     ProjectType.MOBILE_APP: "App móvil",
     ProjectType.WEB_SAAS: "Web / SaaS",

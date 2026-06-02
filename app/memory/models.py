@@ -9,10 +9,12 @@ from uuid import uuid4
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.memory.constants import (
+    MAX_ANCHORS,
     MAX_AGREED_SCOPE_LEN,
     MAX_LIST_ITEM_LEN,
     MAX_METADATA_LIST_ITEMS,
     MAX_METADATA_STRING_LEN,
+    MAX_SUMMARY_CHARS,
 )
 
 
@@ -112,10 +114,29 @@ class Message(BaseModel):
     content: str
 
 
+class AnchorItem(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    topic: str = Field(min_length=1, max_length=120)
+    fact: str = Field(min_length=1, max_length=500)
+    confidence: float = Field(default=0.7, ge=0.0, le=1.0)
+    source_turn_index: int = Field(default=0, ge=0)
+    last_confirmed_at: datetime = Field(default_factory=datetime.utcnow)
+    status: Literal["active", "deprecated"] = "active"
+
+
+class RunningSummary(BaseModel):
+    text: str = Field(default="", max_length=MAX_SUMMARY_CHARS)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    source_turn_upto: int = Field(default=0, ge=0)
+    version: int = Field(default=1, ge=1)
+
+
 class Session(BaseModel):
     session_id: str = Field(default_factory=lambda: str(uuid4()))
 
     history: list[Message] = Field(default_factory=list)
+    anchors: list[AnchorItem] = Field(default_factory=list, max_length=MAX_ANCHORS)
+    running_summary: RunningSummary | None = None
 
     project_metadata: ProjectMetadata = Field(default_factory=ProjectMetadata)
 

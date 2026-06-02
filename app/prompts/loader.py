@@ -60,6 +60,8 @@ def render_estimation_prompt(
     bundle: PromptBundle | None = None,
     version: str | None = None,
     project_metadata: ProjectMetadata | None = None,
+    running_summary: str | None = None,
+    anchors: list[str] | None = None,
 ) -> tuple[str, str]:
     """Renderiza `system.j2` y `user.j2` para el caso de uso *estimation*.
 
@@ -98,6 +100,8 @@ def render_estimation_prompt(
         "_prompt_bundle_version": subdir,
         "_examples_template": f"estimation/{subdir}/examples.j2",
         "project_metadata": project_metadata,
+        "running_summary": running_summary,
+        "anchors": anchors or [],
     }
     if subdir in ("v1", "v2"):
         ctx["output_format"] = "line_items"

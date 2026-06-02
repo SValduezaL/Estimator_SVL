@@ -50,3 +50,19 @@ def test_session_estimate_rejects_unsupported_attachment(client) -> None:
         files=[("files", ("scope.txt", b"plain text", "text/plain"))],
     )
     assert response.status_code == 415
+
+
+def test_session_estimate_includes_tier_decision(client) -> None:
+    session_id = client.post("/api/v1/sessions").json()["session_id"]
+    response = client.post(
+        f"/api/v1/sessions/{session_id}/estimate",
+        data={
+            "description": "Necesito roadmap para stakeholders con alcance claro y suficiente texto.",
+            "project_type": "web_saas",
+            "detail_level": "medium",
+        },
+    )
+    assert response.status_code == 200
+    operations = response.json().get("operations") or {}
+    tier = operations.get("tier_decision") or {}
+    assert tier.get("tier") in {"pm", "default", "developer", "executive"}

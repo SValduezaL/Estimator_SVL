@@ -11,6 +11,20 @@ fases y análisis de riesgos. Devuelves un único objeto JSON que cumple el sche
 Project name: {{ project_metadata.project_name }}
 {% endif %}
 
+{% if running_summary %}
+<running_summary>
+{{ running_summary }}
+</running_summary>
+{% endif %}
+
+{% if anchors %}
+<anchors>
+{% for anchor in anchors %}
+- {{ anchor }}
+{% endfor %}
+</anchors>
+{% endif %}
+
 {% if project_metadata.assumed_team_size %}
 Assumed team size:
 {{ project_metadata.assumed_team_size }}

@@ -10,8 +10,10 @@ class OperationCosts(BaseModel):
 
     estimation_usd: float = 0.0
     memory_extraction_usd: float = 0.0
+    summary_compression_usd: float = 0.0
     guardrails_usd: float = 0.0
     cache_embedding_usd: float = 0.0
+    total_usd: float = 0.0
 
 
 class OperationUsage(BaseModel):
@@ -29,8 +31,12 @@ class EstimationOperationsMetrics(BaseModel):
 
     costs: OperationCosts = Field(default_factory=OperationCosts)
     memory_extraction: OperationUsage = Field(default_factory=OperationUsage)
+    summary_compression: OperationUsage = Field(default_factory=OperationUsage)
     memory_extraction_executed: bool = False
     memory_extraction_degraded: bool = False
+    summary_compression_executed: bool = False
+    summary_compression_degraded: bool = False
+    tier_decision: dict[str, object] | None = None
     guardrails_enabled: bool = False
     guardrails_moderation_executed: bool = False
     semantic_cache_enabled: bool = False

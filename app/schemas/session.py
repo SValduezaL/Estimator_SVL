@@ -6,7 +6,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from app.memory.models import Message, ProjectMetadata
+from app.memory.models import AnchorItem, Message, ProjectMetadata, RunningSummary
 
 
 class SessionCreateResponse(BaseModel):
@@ -20,6 +20,8 @@ class SessionDetailResponse(BaseModel):
 
     session_id: str
     history: list[Message] = Field(default_factory=list)
+    anchors: list[AnchorItem] = Field(default_factory=list)
+    running_summary: RunningSummary | None = None
     project_metadata: ProjectMetadata = Field(default_factory=ProjectMetadata)
     created_at: datetime
     updated_at: datetime

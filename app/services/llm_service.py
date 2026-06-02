@@ -17,6 +17,8 @@ def build_estimation_cache_inputs(
     request: EstimationRequest,
     bundle: PromptBundle | None = None,
     project_metadata: ProjectMetadata | None = None,
+    running_summary: str | None = None,
+    anchors: list[str] | None = None,
 ) -> tuple[str, str, str, int, int | None, PromptBundle]:
     """Textos y parámetros que entran en la clave de caché y en la llamada al modelo."""
     b = bundle or DEFAULT_ESTIMATION_BUNDLE
@@ -24,6 +26,8 @@ def build_estimation_cache_inputs(
         request,
         bundle=b,
         project_metadata=project_metadata,
+        running_summary=running_summary,
+        anchors=anchors,
     )
     opts = request.to_generation_options()
     model = opts.model if opts.model is not None else settings.llm_model

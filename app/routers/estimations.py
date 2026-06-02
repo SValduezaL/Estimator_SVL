@@ -27,7 +27,6 @@ from app.guardrails.exceptions import GuardrailBlocked
 from app.logging.sync import run_sync_with_context
 from app.memory.exceptions import SessionExpiredError, SessionNotFoundError
 from app.memory.service import (
-    history_to_llm_messages,
     metadata_for_prompt,
     persist_estimation_turn,
 )
@@ -43,6 +42,8 @@ from app.services.llm_pricing import estimate_cost_usd
 from app.services.llm_service import build_estimation_cache_inputs
 from app.services.llm_wrapper import CACHE_SCHEMA_VERSION, LLMWrapper
 from app.services.structured_llm import ReasoningLengthError
+from app.services.tier_resolver import resolve_tier
+from app.memory.context_builder import compose_memory_context
 
 router = APIRouter(prefix="/api/v1", tags=["estimations"])
 log = structlog.get_logger(__name__)
@@ -72,6 +73,8 @@ def _build_operations_metrics(
     settings: Settings,
     estimation_cost_usd: float,
     extraction: dict[str, Any] | None = None,
+    summary_compression: dict[str, Any] | None = None,
+    tier_decision: dict[str, Any] | None = None,
     cache_lookup_performed: bool = False,
     cache_embedding_computed: bool = False,
     cache_hit: bool = False,
@@ -79,7 +82,9 @@ def _build_operations_metrics(
     openai_client: Any | None = None,
 ) -> EstimationOperationsMetrics:
     ext = extraction or {}
+    summary = summary_compression or {}
     mem_cost = float(ext.get("cost_usd", 0.0)) if ext.get("executed") else 0.0
+    summary_cost = float(summary.get("cost_usd", 0.0)) if summary.get("executed") else 0.0
     guardrails_on = settings.guardrails_enabled
     moderation_on = guardrails_on and settings.guardrails_moderation_enabled
     moderation_ran = moderation_on and openai_client is not None
@@ -88,8 +93,10 @@ def _build_operations_metrics(
         costs=OperationCosts(
             estimation_usd=float(estimation_cost_usd),
             memory_extraction_usd=mem_cost,
+            summary_compression_usd=summary_cost,
             guardrails_usd=0.0,
             cache_embedding_usd=0.0,
+            total_usd=float(estimation_cost_usd) + mem_cost + summary_cost,
         ),
         memory_extraction=OperationUsage(
             input_tokens=int(ext.get("input_tokens", 0)),
@@ -100,6 +107,16 @@ def _build_operations_metrics(
         ),
         memory_extraction_executed=bool(ext.get("executed")),
         memory_extraction_degraded=bool(ext.get("degraded")),
+        summary_compression=OperationUsage(
+            input_tokens=int(summary.get("input_tokens", 0)),
+            output_tokens=int(summary.get("output_tokens", 0)),
+            total_tokens=int(summary.get("total_tokens", 0)),
+            model=summary.get("model"),
+            latency_ms=summary.get("latency_ms"),
+        ),
+        summary_compression_executed=bool(summary.get("executed")),
+        summary_compression_degraded=bool(summary.get("degraded")),
+        tier_decision=tier_decision,
         guardrails_enabled=guardrails_on,
         guardrails_moderation_executed=moderation_ran,
         semantic_cache_enabled=bool(settings.semantic_cache_enabled and (settings.redis_url or "").strip()),
@@ -168,6 +185,18 @@ async def run_estimation_pipeline(
 
     request_for_llm = request.model_copy(update={"description": input_guarded.text})
     opts = request.to_generation_options()
+    tier = resolve_tier(
+        detail_level=request.detail_level,
+        project_type=request.project_type,
+        description=input_guarded.text,
+    )
+    if settings.tier_rules_enabled:
+        opts = replace(
+            opts,
+            model=tier.model_override,
+            max_tokens=tier.max_tokens,
+            thinking_budget=tier.thinking_budget,
+        )
     if session is not None:
         opts = replace(opts, skip_cache=True)
     bundle = DEFAULT_ESTIMATION_BUNDLE
@@ -232,6 +261,13 @@ async def run_estimation_pipeline(
                     input_guarded.text,
                     settings,
                 )
+            operations.costs.total_usd = (
+                operations.costs.estimation_usd
+                + operations.costs.memory_extraction_usd
+                + operations.costs.summary_compression_usd
+                + operations.costs.guardrails_usd
+                + operations.costs.cache_embedding_usd
+            )
             return EstimationResponse(
                 result=result,
                 prompt_version=bundle.public_id,
@@ -252,6 +288,8 @@ async def run_estimation_pipeline(
             request=request_for_llm,
             bundle=bundle,
             project_metadata=prompt_metadata,
+            running_summary=session.running_summary.text if session and session.running_summary else None,
+            anchors=[a.fact for a in session.anchors if a.status == "active"] if session else None,
         )
     )
 
@@ -268,7 +306,11 @@ async def run_estimation_pipeline(
         )
         raise HTTPException(status_code=400, detail="Request could not be processed")
 
-    conversation_history = history_to_llm_messages(session.history) if session else None
+    conversation_history = (
+        compose_memory_context(session)
+        if session
+        else None
+    )
 
     loop = asyncio.get_running_loop()
     try:
@@ -311,13 +353,20 @@ async def run_estimation_pipeline(
         raise HTTPException(status_code=502, detail="Structured estimation failed") from exc
 
     extraction_metrics: dict[str, Any] | None = None
+    summary_metrics: dict[str, Any] | None = None
     if session is not None:
-        _, extraction_metrics = await persist_estimation_turn(
+        persist_out = await persist_estimation_turn(
             session,
             user_turn=input_guarded.text,
             result=result,
             client=metadata_client,
+            summary_model=settings.memory_summary_model,
         )
+        if isinstance(persist_out, tuple) and len(persist_out) == 3:
+            _, extraction_metrics, summary_metrics = persist_out
+        else:
+            _, extraction_metrics = persist_out
+            summary_metrics = None
 
     duration_ms = int((time.perf_counter() - start) * 1000)
 
@@ -340,6 +389,12 @@ async def run_estimation_pipeline(
         settings=settings,
         estimation_cost_usd=float(metrics["cost_usd"]),
         extraction=extraction_metrics,
+        summary_compression=summary_metrics,
+        tier_decision={
+            "tier": tier.tier.value,
+            "rule_id": tier.rule_id,
+            "reason_codes": tier.reason_codes,
+        },
         cache_lookup_performed=cache_lookup_performed,
         cache_embedding_computed=cache_embedding_computed,
         cache_hit=bool(metrics.get("cache_hit")),
@@ -351,6 +406,13 @@ async def run_estimation_pipeline(
             input_guarded.text,
             settings,
         )
+    operations.costs.total_usd = (
+        operations.costs.estimation_usd
+        + operations.costs.memory_extraction_usd
+        + operations.costs.summary_compression_usd
+        + operations.costs.guardrails_usd
+        + operations.costs.cache_embedding_usd
+    )
 
     return EstimationResponse(
         result=result,

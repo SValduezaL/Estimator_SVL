@@ -57,6 +57,8 @@ async def read_conversation_session(session_id: str) -> SessionDetailResponse:
     return SessionDetailResponse(
         session_id=session.session_id,
         history=session.history,
+        anchors=session.anchors,
+        running_summary=session.running_summary,
         project_metadata=session.project_metadata,
         created_at=session.created_at,
         updated_at=session.updated_at,
