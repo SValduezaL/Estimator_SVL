@@ -47,6 +47,7 @@ WORKDIR /app
 
 COPY --from=builder /app/.venv /app/.venv
 COPY app/ /app/app/
+COPY ai_service/ /app/ai_service/
 
 RUN chown -R appuser:appgroup /app
 
