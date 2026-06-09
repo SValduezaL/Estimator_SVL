@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from app.generation.conversation.models import ProjectMetadata
 from app.foundation.prompts.loader import render_estimation_prompt
-from app.domain.schemas.estimation_common import DetailLevel, ProjectType
-from app.domain.schemas.estimation_request import EstimationRequest
+from app.domain.schemas.estimation import (
+    DetailLevel,
+    EstimationRequest,
+    ProjectType,
+)
+from app.generation.conversation.models import ProjectMetadata
 
 
 def test_render_with_session_metadata() -> None:
