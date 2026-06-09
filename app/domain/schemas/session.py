@@ -6,7 +6,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from app.memory.models import AnchorItem, Message, ProjectMetadata, RunningSummary
+from app.generation.conversation.models import AnchorItem, Message, ProjectMetadata, RunningSummary
 
 
 class SessionCreateResponse(BaseModel):

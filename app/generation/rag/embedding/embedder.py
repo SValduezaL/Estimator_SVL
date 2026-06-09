@@ -9,9 +9,9 @@ from typing import TypeVar
 import structlog
 from openai import OpenAI, RateLimitError
 
-from ai_service.app.config import Settings, get_settings
-from ai_service.app.embedding_pipeline.schemas import Chunk, EmbeddedChunk
-from ai_service.app.ssl_utils import create_openai_http_client
+from app.config import Settings, get_settings
+from app.generation.rag.schemas import Chunk, EmbeddedChunk
+from app.foundation.ssl_utils import create_openai_http_client
 
 log = structlog.get_logger(__name__)
 

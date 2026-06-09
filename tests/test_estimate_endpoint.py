@@ -2,8 +2,8 @@
 
 import pytest
 
-from app.prompts.registry import ESTIMATION_PROMPT_VERSION
-from app.schemas.estimation_common import DetailLevel
+from app.foundation.prompts.registry import ESTIMATION_PROMPT_VERSION
+from app.domain.schemas.estimation_common import DetailLevel
 from tests.conftest import _STUB_RESULT
 
 TRANSCRIPTION = (

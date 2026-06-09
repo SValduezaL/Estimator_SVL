@@ -1,5 +1,5 @@
 """Logging estructurado con structlog."""
 
-from app.logging.config import configure_logging
+from app.foundation.observability.config import configure_logging
 
 __all__ = ["configure_logging"]

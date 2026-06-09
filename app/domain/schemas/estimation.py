@@ -6,18 +6,18 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app.schemas.estimation_common import SCHEMA_VERSION
-from app.schemas.estimation_operations import EstimationOperationsMetrics
-from app.schemas.estimation_output import EstimationResult
+from app.domain.schemas.estimation_common import SCHEMA_VERSION
+from app.domain.schemas.estimation_operations import EstimationOperationsMetrics
+from app.domain.schemas.estimation_output import EstimationResult
 
 # Re-exports para compatibilidad de imports existentes
-from app.schemas.estimation_common import (  # noqa: F401
+from app.domain.schemas.estimation_common import (  # noqa: F401
     DETAIL_LEVEL_LABELS,
     PROJECT_TYPE_LABELS,
     DetailLevel,
     ProjectType,
 )
-from app.schemas.estimation_request import EstimationRequest, GenerationOptions  # noqa: F401
+from app.domain.schemas.estimation_request import EstimationRequest, GenerationOptions  # noqa: F401
 
 
 class TokenUsageResponse(BaseModel):

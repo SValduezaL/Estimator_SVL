@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.memory.constants import (
+from app.generation.conversation.constants import (
     MAX_ANCHORS,
     MAX_AGREED_SCOPE_LEN,
     MAX_LIST_ITEM_LEN,

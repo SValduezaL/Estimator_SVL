@@ -12,10 +12,10 @@ from structlog.testing import CapturingLogger
 
 from app.config import Settings, get_settings
 from app.fixtures.estimation_examples import load_validated_example
-from app.logging.config import configure_logging
+from app.foundation.observability.config import configure_logging
 from app.main import app
-from app.schemas.estimation_common import ProjectType
-from app.services import llm_wrapper as lw_mod
+from app.domain.schemas.estimation_common import ProjectType
+from app.foundation.llm import wrapper as lw_mod
 
 _STUB_RESULT = load_validated_example(ProjectType.WEB_SAAS, 1)
 
@@ -48,7 +48,7 @@ def _test_settings() -> Settings:
 
 @pytest.fixture(autouse=True)
 def _configure_logging_for_tests() -> Iterator[None]:
-    from app.prompts.loader import clear_estimation_environment_cache
+    from app.foundation.prompts.loader import clear_estimation_environment_cache
 
     clear_estimation_environment_cache()
     configure_logging(_test_settings(), version="0.1.0-test")

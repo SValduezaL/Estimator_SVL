@@ -5,9 +5,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from app.config import Settings
-from app.guardrails.types import FailurePolicy
-from app.guardrails.telemetry import guardrail_timer, log_guardrail_event
-from app.guardrails.types import GuardrailCheckResult
+from app.foundation.guardrails.types import FailurePolicy
+from app.foundation.guardrails.telemetry import guardrail_timer, log_guardrail_event
+from app.foundation.guardrails.types import GuardrailCheckResult
 
 REDACTION_TOKEN = "[REDACTED_PII]"
 

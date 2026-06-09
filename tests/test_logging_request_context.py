@@ -7,7 +7,7 @@ from io import StringIO
 
 from fastapi.testclient import TestClient
 
-from app.logging.config import configure_logging
+from app.foundation.observability.config import configure_logging
 
 _ESTIMATE_PAYLOAD = {
     "description": "Aplicación web con autenticación, panel admin y API REST documentada.",

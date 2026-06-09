@@ -8,8 +8,8 @@ import instructor
 import structlog
 from litellm import completion
 
-from app.schemas.estimation_common import REASONING_BOUNDS, DetailLevel
-from app.schemas.estimation_output import EstimationResult
+from app.domain.schemas.estimation_common import REASONING_BOUNDS, DetailLevel
+from app.domain.schemas.estimation_output import EstimationResult
 
 log = structlog.get_logger(__name__)
 

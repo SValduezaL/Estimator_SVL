@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.memory.models import AnchorItem, Message
+from app.generation.conversation.models import AnchorItem, Message
 
 
 class CompressionPolicy:

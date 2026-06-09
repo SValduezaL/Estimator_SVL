@@ -5,7 +5,7 @@ from functools import lru_cache
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from app.services.llm_pricing import provider_from_model
+from app.foundation.llm.pricing import provider_from_model
 
 
 class Settings(BaseSettings):

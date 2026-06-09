@@ -7,7 +7,7 @@ from typing import Any
 
 import streamlit as st
 
-from app.schemas.estimation import (
+from app.domain.schemas.estimation import (
     DETAIL_LEVEL_LABELS,
     PROJECT_TYPE_LABELS,
     DetailLevel,

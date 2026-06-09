@@ -1,6 +1,6 @@
 """Schemas públicos del estimador."""
 
-from app.schemas.estimation import (
+from app.domain.schemas.estimation import (
     DETAIL_LEVEL_LABELS,
     PROJECT_TYPE_LABELS,
     DetailLevel,
@@ -10,8 +10,8 @@ from app.schemas.estimation import (
     ProjectType,
     TokenUsageResponse,
 )
-from app.schemas.estimation_common import SCHEMA_VERSION
-from app.schemas.estimation_output import EstimationResult, Phase
+from app.domain.schemas.estimation_common import SCHEMA_VERSION
+from app.domain.schemas.estimation_output import EstimationResult, Phase
 
 __all__ = [
     "SCHEMA_VERSION",

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.schemas.estimation_common import DetailLevel, ProjectType, Tier
+from app.domain.schemas.estimation_common import DetailLevel, ProjectType, Tier
 
 
 @dataclass

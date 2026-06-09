@@ -8,16 +8,16 @@ import pytest
 from fakeredis import FakeRedis
 from fastapi.testclient import TestClient
 
-from app.cache import build_cache_context, make_exact_key
-from app.cache.exact import EstimationExactCache
-from app.cache.orchestrator import EstimationCacheOrchestrator
-from app.cache.types import CachedPayload
+from app.generation.cag import build_cache_context, make_exact_key
+from app.generation.cag.exact import EstimationExactCache
+from app.generation.cag.orchestrator import EstimationCacheOrchestrator
+from app.generation.cag.types import CachedPayload
 from app.config import Settings, get_settings
 from app.dependencies import get_cache_orchestrator
 from app.main import app
-from app.prompts.registry import DEFAULT_ESTIMATION_BUNDLE
-from app.schemas.estimation_request import EstimationRequest
-from app.services.llm_wrapper import CACHE_SCHEMA_VERSION
+from app.foundation.prompts.registry import DEFAULT_ESTIMATION_BUNDLE
+from app.domain.schemas.estimation_request import EstimationRequest
+from app.foundation.llm.wrapper import CACHE_SCHEMA_VERSION
 
 from tests.conftest import _STUB_RESULT
 from tests.test_estimate_endpoint import ESTIMATE_PAYLOAD

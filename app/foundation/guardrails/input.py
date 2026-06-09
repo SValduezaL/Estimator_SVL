@@ -5,14 +5,14 @@ from __future__ import annotations
 from typing import Any
 
 from app.config import Settings
-from app.guardrails.exceptions import InputGuardrailViolation, ModerationUnavailable
-from app.guardrails.injection import check_prompt_injection
-from app.guardrails.moderation import check_moderation
-from app.guardrails.pii import check_pii
-from app.guardrails.policies import apply_input_policy
-from app.guardrails.types import FailurePolicy
-from app.guardrails.telemetry import log_guardrail_event, log_policy_applied
-from app.guardrails.types import GuardrailCheckResult, InputGuardrailResult, InputViolationReason
+from app.foundation.guardrails.exceptions import InputGuardrailViolation, ModerationUnavailable
+from app.foundation.guardrails.injection import check_prompt_injection
+from app.foundation.guardrails.moderation import check_moderation
+from app.foundation.guardrails.pii import check_pii
+from app.foundation.guardrails.policies import apply_input_policy
+from app.foundation.guardrails.types import FailurePolicy
+from app.foundation.guardrails.telemetry import log_guardrail_event, log_policy_applied
+from app.foundation.guardrails.types import GuardrailCheckResult, InputGuardrailResult, InputViolationReason
 
 _REASON_MAP: dict[str, InputViolationReason] = {
     "moderation": "moderation",

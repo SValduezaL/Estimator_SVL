@@ -5,8 +5,8 @@ from __future__ import annotations
 import structlog
 
 from app.config import Settings
-from app.guardrails.types import FailurePolicy
-from app.guardrails.types import GuardrailCheckResult
+from app.foundation.guardrails.types import FailurePolicy
+from app.foundation.guardrails.types import GuardrailCheckResult
 
 log = structlog.get_logger(__name__)
 

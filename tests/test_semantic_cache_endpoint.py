@@ -9,10 +9,10 @@ import pytest
 from fakeredis import FakeRedis
 from fastapi.testclient import TestClient
 
-from app.cache.embeddings import FakeEmbeddingProvider
-from app.cache.exact import EstimationExactCache
-from app.cache.orchestrator import EstimationCacheOrchestrator
-from app.cache.semantic import EstimationSemanticCache
+from app.generation.cag.embeddings import FakeEmbeddingProvider
+from app.generation.cag.exact import EstimationExactCache
+from app.generation.cag.orchestrator import EstimationCacheOrchestrator
+from app.generation.cag.semantic import EstimationSemanticCache
 from app.config import Settings, get_settings
 from app.dependencies import get_cache_orchestrator
 from app.main import app
@@ -81,7 +81,7 @@ def test_semantic_hit_skips_llm(
     client, orch = client_semantic_cache
     import json
 
-    from app.cache.types import CachedPayload
+    from app.generation.cag.types import CachedPayload
     from tests.conftest import _STUB_RESULT
 
     payload = CachedPayload(

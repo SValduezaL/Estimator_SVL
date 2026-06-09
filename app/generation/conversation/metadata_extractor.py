@@ -9,9 +9,9 @@ from typing import Any
 import structlog
 from pydantic import ValidationError
 
-from app.memory.exceptions import MetadataExtractionError
-from app.memory.models import ProjectMetadata
-from app.services.llm_pricing import estimate_cost_usd
+from app.generation.conversation.exceptions import MetadataExtractionError
+from app.generation.conversation.models import ProjectMetadata
+from app.foundation.llm.pricing import estimate_cost_usd
 
 EXTRACTOR_MODEL = "gpt-4o-mini"
 

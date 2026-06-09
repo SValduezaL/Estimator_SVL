@@ -7,15 +7,15 @@ import json
 import pytest
 from jinja2 import TemplateNotFound, UndefinedError
 
-from app.prompts.loader import build_estimation_jinja_environment, render_estimation_prompt
-from app.prompts.registry import (
+from app.foundation.prompts.loader import build_estimation_jinja_environment, render_estimation_prompt
+from app.foundation.prompts.registry import (
     DEFAULT_ESTIMATION_BUNDLE,
     ESTIMATION_BUNDLE_V3,
     ESTIMATION_PROMPT_VERSION,
     get_estimation_bundle,
 )
-from app.schemas.estimation_common import DetailLevel, ProjectType
-from app.schemas.estimation_request import EstimationRequest
+from app.domain.schemas.estimation_common import DetailLevel, ProjectType
+from app.domain.schemas.estimation_request import EstimationRequest
 
 
 def _make_request(**overrides: object) -> EstimationRequest:

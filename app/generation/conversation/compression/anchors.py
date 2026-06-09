@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from app.memory.constants import MAX_ANCHORS
-from app.memory.models import AnchorItem, Session
+from app.generation.conversation.constants import MAX_ANCHORS
+from app.generation.conversation.models import AnchorItem, Session
 
 ANCHOR_HINTS = ("must", "cannot", "debe", "no puede", "compliance", "scope", "alcance")
 

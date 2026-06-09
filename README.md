@@ -765,128 +765,31 @@ Notas:
 - El servicio expone el puerto `8000`.
 - El `healthcheck` apunta a `GET /health`.
 - Si en Windows/Mac no detecta cambios con `--reload`, habilita `WATCHFILES_FORCE_POLLING=true` en el servicio.
-- Compose también levanta **`ai_service`** (puerto host **`8001`**): microservicio de embeddings S7, independiente del estimador en `app/`.
+- Embeddings S7 viven en el **mismo monolito** (`:8000`): `POST /embeddings/ingest` y `POST /embeddings/compare`.
 
-## S7 — Microservicio `ai_service` (embeddings)
+## S7 — Pipeline RAG (embeddings en monolito)
 
-Servicio FastAPI separado para chunking estructural de presupuestos JSON y generación de embeddings OpenAI (`text-embedding-3-small`). **No modifica** el estimador (`app/` en `:8000`) ni Streamlit.
+Chunking estructural y 8 estrategias comparables bajo `app/generation/rag/`. Endpoints en el estimador (`:8000`):
 
-| Servicio | Puerto | Arranque | Responsabilidad |
-|----------|--------|----------|-----------------|
-| `estimator` | 8000 | `uvicorn app.main:app` | Estimaciones, sesiones, caché (S1–S6) |
-| `ai_service` | 8001 | `uvicorn ai_service.app.main:app` | `POST /embeddings/ingest`, script `compare.py` |
+| Endpoint | Descripción |
+|----------|-------------|
+| `POST /embeddings/ingest` | Chunk + embed presupuestos JSON |
+| `POST /embeddings/compare` | Compara estrategias de chunking |
+| `GET/PUT /api/v1/config/models` | Overrides de modelos en runtime (Redis) |
 
-Variables en `.env` (ver `.env.example`):
-
-| Variable | Uso |
-|----------|-----|
-| `OPENAI_API_KEY` | Compartida; obligatoria para embeddings |
-| `AI_SERVICE_APP_NAME` | Nombre del servicio (evita colisión con `APP_NAME` del estimador) |
-| `AI_SERVICE_BASE_URL` | URL base (default `http://localhost:8001`) |
-
-Datos de ejemplo:
-
-- [`ai_service/data/budgets_sample.json`](ai_service/data/budgets_sample.json) — 15 presupuestos
-- [`ai_service/data/ingest_example_single_budget.json`](ai_service/data/ingest_example_single_budget.json) — un presupuesto para Swagger/curl
-
-### Arrancar `ai_service` en local
+Datos de ejemplo: [`data/budgets_sample.json`](data/budgets_sample.json), [`data/ingest_example_single_budget.json`](data/ingest_example_single_budget.json).
 
 ```bash
-uv sync
-uv run python -m uvicorn ai_service.app.main:app --host 127.0.0.1 --port 8001 --reload
-```
-
-- Documentación: http://127.0.0.1:8001/docs  
-- Health: http://127.0.0.1:8001/health  
-
-### `POST /embeddings/ingest`
-
-Ingesta una lista de presupuestos; devuelve chunks vectorizados y estadísticas (`total_budgets`, `total_chunks`, `total_tokens`, `estimated_cost_usd`).
-
-En Swagger (`:8001/docs`), usa el ejemplo **`fintech_single_budget`** o el JSON de `ingest_example_single_budget.json`.
-
-```bash
-curl -X POST "http://127.0.0.1:8001/embeddings/ingest" \
+curl -X POST "http://127.0.0.1:8000/embeddings/ingest" \
   -H "Content-Type: application/json" \
-  -d "@ai_service/data/ingest_example_single_budget.json"
-```
+  -d "@data/ingest_example_single_budget.json"
 
-### Script `compare.py` (similitud coseno)
-
-Compara dos textos con el mismo embedder del pipeline (stdlib `math`, sin numpy).
-
-**En el host** (desde la raíz del repo; carga `.env` vía `ai_service.app.config`):
-
-```bash
-uv run python ai_service/scripts/compare.py \
+uv run python scripts/compare.py \
   --text-a "OAuth 2.0 authentication backend for fintech" \
   --text-b "JWT-based authorization service for banking app"
 ```
 
-**Dentro del contenedor Docker**:
-
-```bash
-docker compose -f docker-compose-dev.yml exec ai_service \
-  python ai_service/scripts/compare.py \
-  --text-a "OAuth 2.0 authentication backend for fintech" \
-  --text-b "JWT-based authorization service for banking app"
-```
-
-Salida esperada (formato; el valor numérico depende de los textos y del modelo):
-
-```
-Text A: OAuth 2.0 authentication backend for fintech
-Text B: JWT-based authorization service for banking app
-Cosine similarity: 0.6329
-```
-
-**Sanity check (Paso 7):** tres parejas de control con resultados documentados en [`ai_service/app/embedding_pipeline/SANITY_CHECK.md`](ai_service/app/embedding_pipeline/SANITY_CHECK.md) (parejas A/B/C del enunciado; similitudes medidas ~0.60 / ~0.19 / ~0.54).
-
-### Docker Compose — solo `ai_service`
-
-```bash
-docker compose -f docker-compose-dev.yml up ai_service
-# Tras cambios en pyproject.toml:
-docker compose -f docker-compose-dev.yml build ai_service
-```
-
-### Troubleshooting (Windows / SSL)
-
-Si en **host** (`uv run uvicorn …` o `compare.py`) ves errores SSL del tipo `CERTIFICATE_VERIFY_FAILED` o `APIConnectionError` al llamar a OpenAI o al cargar tiktoken, pero el **body del ingest es válido**:
-
-| Síntoma | Fase | Causa habitual |
-|---------|------|----------------|
-| 500 al instante, sin logs de batch OpenAI | Chunker / tiktoken | Primera carga del vocabulario `cl100k_base` |
-| 500 tras chunkear; log `APIConnectionError` | Embedder | HTTPS a `api.openai.com` sin confiar en la CA del sistema |
-
-**Qué hace el proyecto para mitigarlo:**
-
-1. **Vocabulario tiktoken en disco** — [`ai_service/data/encodings/cl100k_base.tiktoken`](ai_service/data/encodings/cl100k_base.tiktoken): el chunker no necesita descargar el BPE por red.
-2. **`truststore` (Windows)** — En [`ai_service/app/ssl_utils.py`](ai_service/app/ssl_utils.py), al arrancar se usa el almacén de certificados del SO (útil con proxy corporativo).
-3. **Mensajes en dev** — Con `AI_SERVICE_APP_ENV=dev`, el 500 del ingest incluye el tipo de error (`APIConnectionError`, etc.) además del mensaje genérico.
-
-**Pasos recomendados:**
-
-```bash
-uv sync
-# Reiniciar uvicorn tras cambios de dependencias
-uv run python -m uvicorn ai_service.app.main:app --host 127.0.0.1 --port 8001 --reload
-```
-
-Si sigue fallando en host, usa **Docker** (suele funcionar sin configuración extra):
-
-```bash
-docker compose -f docker-compose-dev.yml run --rm ai_service \
-  /app/.venv/bin/python ai_service/scripts/compare.py \
-  --text-a "..." --text-b "..."
-```
-
-| Código HTTP | Significado |
-|-------------|-------------|
-| **422** | JSON no cumple esquema `Budget` / `IngestRequest` |
-| **500** + `OPENAI_API_KEY is not configured` | Falta clave en `.env` |
-| **500** + `Embedding service unavailable` | Error en chunker/embedder; revisar logs y tabla anterior |
-| **200** | Pipeline OK (`chunks[].embedding` longitud 1536) |
+Arquitectura por capas documentada en [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Ejecutar con Docker Compose (producción)
 

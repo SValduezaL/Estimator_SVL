@@ -6,7 +6,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field, StringConstraints, model_validator
 
-from app.schemas.estimation_common import LOW_CONFIDENCE_THRESHOLD, OUT_OF_SCOPE_PREFIX
+from app.domain.schemas.estimation_common import LOW_CONFIDENCE_THRESHOLD, OUT_OF_SCOPE_PREFIX
 
 StackItem = Annotated[str, StringConstraints(min_length=1, max_length=80, strip_whitespace=True)]
 

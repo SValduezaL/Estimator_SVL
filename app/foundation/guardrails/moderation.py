@@ -7,10 +7,10 @@ from typing import Any
 import structlog
 
 from app.config import Settings
-from app.guardrails.exceptions import ModerationUnavailable
-from app.guardrails.types import FailurePolicy
-from app.guardrails.telemetry import guardrail_timer, log_guardrail_event
-from app.guardrails.types import GuardrailCheckResult, ModerationScores
+from app.foundation.guardrails.exceptions import ModerationUnavailable
+from app.foundation.guardrails.types import FailurePolicy
+from app.foundation.guardrails.telemetry import guardrail_timer, log_guardrail_event
+from app.foundation.guardrails.types import GuardrailCheckResult, ModerationScores
 
 log = structlog.get_logger(__name__)
 

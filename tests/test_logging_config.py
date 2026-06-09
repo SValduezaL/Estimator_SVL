@@ -9,8 +9,8 @@ from io import StringIO
 import structlog
 
 from app.config import Settings
-from app.logging.config import configure_logging
-from app.logging.processors import redact_sensitive
+from app.foundation.observability.config import configure_logging
+from app.foundation.observability.processors import redact_sensitive
 
 
 def _prod_settings() -> Settings:

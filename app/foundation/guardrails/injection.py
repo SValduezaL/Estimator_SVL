@@ -9,9 +9,9 @@ from pathlib import Path
 import yaml
 
 from app.config import Settings
-from app.guardrails.types import FailurePolicy
-from app.guardrails.telemetry import guardrail_timer, log_guardrail_event
-from app.guardrails.types import GuardrailCheckResult
+from app.foundation.guardrails.types import FailurePolicy
+from app.foundation.guardrails.telemetry import guardrail_timer, log_guardrail_event
+from app.foundation.guardrails.types import GuardrailCheckResult
 
 _PATTERNS_DIR = Path(__file__).resolve().parent / "patterns"
 _FLAG_MAP = {"IGNORECASE": re.IGNORECASE, "DOTALL": re.DOTALL, "MULTILINE": re.MULTILINE}

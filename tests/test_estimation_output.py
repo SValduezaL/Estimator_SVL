@@ -2,10 +2,10 @@
 
 import pytest
 
-from app.schemas.estimation_common import OUT_OF_SCOPE_PREFIX
-from app.schemas.estimation_output import EstimationResult, Phase
-from app.services.structured_llm import ReasoningLengthError, assert_reasoning_length
-from app.schemas.estimation_common import DetailLevel
+from app.domain.schemas.estimation_common import OUT_OF_SCOPE_PREFIX
+from app.domain.schemas.estimation_output import EstimationResult, Phase
+from app.foundation.llm.structured import ReasoningLengthError, assert_reasoning_length
+from app.domain.schemas.estimation_common import DetailLevel
 
 _VALID = EstimationResult(
     summary="MVP SaaS de facturación recurrente multi-tenant con pasarela y panel admin.",

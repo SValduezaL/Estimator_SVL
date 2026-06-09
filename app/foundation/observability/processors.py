@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.logging.context import get_span_id, get_trace_id
+from app.foundation.observability.context import get_span_id, get_trace_id
 
 _SENSITIVE_KEYS = frozenset({
     "api_key",

@@ -9,7 +9,7 @@ import structlog
 from structlog.types import Processor
 
 from app.config import Settings
-from app.logging.processors import (
+from app.foundation.observability.processors import (
     add_otel_context,
     add_service_context,
     redact_sensitive,

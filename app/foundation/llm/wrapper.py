@@ -14,22 +14,22 @@ import structlog
 from litellm import Router
 
 from app.config import Settings
-from app.guardrails.config import GUARDRAILS_VERSION
-from app.guardrails.exceptions import OutputGuardrailRetryable
-from app.guardrails.filters import build_safe_fallback
-from app.guardrails.output import run_output_guardrails
-from app.guardrails.telemetry import log_guardrail_event
-from app.schemas.estimation_common import SCHEMA_VERSION, DetailLevel, ProjectType
-from app.cache import EstimationCacheOrchestrator
-from app.cache.policies import is_result_cacheable
-from app.cache.types import CachedPayload, CacheContext
-from app.schemas.estimation_output import EstimationResult
-from app.services.llm_pricing import (
+from app.foundation.guardrails.config import GUARDRAILS_VERSION
+from app.foundation.guardrails.exceptions import OutputGuardrailRetryable
+from app.foundation.guardrails.filters import build_safe_fallback
+from app.foundation.guardrails.output import run_output_guardrails
+from app.foundation.guardrails.telemetry import log_guardrail_event
+from app.domain.schemas.estimation_common import SCHEMA_VERSION, DetailLevel, ProjectType
+from app.generation.cag import EstimationCacheOrchestrator
+from app.generation.cag.policies import is_result_cacheable
+from app.generation.cag.types import CachedPayload, CacheContext
+from app.domain.schemas.estimation_output import EstimationResult
+from app.foundation.llm.pricing import (
     estimate_cost_usd,
     normalise_model_name,
     provider_from_model,
 )
-from app.services.structured_llm import (
+from app.foundation.llm.structured import (
     complete_estimation,
     extract_metrics,
     instructor_client_for_completion,
@@ -80,7 +80,7 @@ class LLMWrapper:
         self._settings = settings
         self._orchestrator = orchestrator
         if cache is not None and orchestrator is None:
-            from app.cache.exact import EstimationExactCache
+            from app.generation.cag.exact import EstimationExactCache
 
             if isinstance(cache, EstimationExactCache):
                 self._orchestrator = EstimationCacheOrchestrator(

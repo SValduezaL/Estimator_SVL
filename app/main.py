@@ -3,10 +3,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.config import settings
-from app.logging.config import configure_logging
-from app.logging.exceptions import register_exception_handlers
-from app.logging.middleware import RequestContextMiddleware
-from app.routers import estimations, sessions
+from app.foundation.observability.config import configure_logging
+from app.foundation.observability.exceptions import register_exception_handlers
+from app.foundation.observability.middleware import RequestContextMiddleware
+from app.api import config, embeddings, estimations, sessions
 
 
 APP_VERSION = "0.1.0"
@@ -34,6 +34,8 @@ register_exception_handlers(app)
 
 app.include_router(estimations.router)
 app.include_router(sessions.router)
+app.include_router(embeddings.router)
+app.include_router(config.router)
 
 
 @app.get("/", tags=["meta"])

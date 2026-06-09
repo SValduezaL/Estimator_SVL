@@ -6,9 +6,9 @@ from datetime import datetime, timedelta
 
 import structlog
 
-from app.memory.constants import SESSION_TTL_HOURS
-from app.memory.exceptions import SessionExpiredError, SessionNotFoundError
-from app.memory.models import Session
+from app.generation.conversation.constants import SESSION_TTL_HOURS
+from app.generation.conversation.exceptions import SessionExpiredError, SessionNotFoundError
+from app.generation.conversation.models import Session
 
 log = structlog.get_logger(__name__)
 

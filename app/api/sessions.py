@@ -1,4 +1,4 @@
-"""Router HTTP para sesiones conversacionales."""
+"""Router HTTP fino para sesiones conversacionales."""
 
 from __future__ import annotations
 
@@ -6,27 +6,22 @@ import structlog
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import ValidationError
 
-from app.attachments import (
+from app.config import Settings, get_settings
+from app.dependencies import get_estimation_service
+from app.domain.estimation_service import EstimationService
+from app.domain.exceptions import EstimationFailedError, PromptGuardrailError
+from app.domain.schemas.estimation import EstimationRequest, EstimationResponse
+from app.domain.schemas.estimation_common import DetailLevel, ProjectType
+from app.domain.schemas.session import SessionCreateResponse, SessionDetailResponse
+from app.foundation.attachments import (
     AttachmentExtractionError,
     UnsupportedAttachmentError,
     enrich_transcript,
     extract_text,
 )
-from app.config import Settings, get_settings
-from app.dependencies import (
-    get_async_openai_client,
-    get_cache_orchestrator,
-    get_llm_wrapper,
-    get_openai_moderation_client,
-)
-from app.memory.exceptions import SessionExpiredError, SessionNotFoundError
-from app.memory.store import create_session, get_session
-from app.routers.estimations import run_estimation_pipeline
-from app.schemas.estimation import EstimationRequest, EstimationResponse
-from app.schemas.estimation_common import DetailLevel, ProjectType
-from app.schemas.session import SessionCreateResponse, SessionDetailResponse
-from app.services.llm_wrapper import LLMWrapper
-from app.cache import EstimationCacheOrchestrator
+from app.foundation.guardrails.exceptions import GuardrailBlocked
+from app.generation.conversation.exceptions import SessionExpiredError, SessionNotFoundError
+from app.generation.conversation.store import create_session, get_session
 
 router = APIRouter(prefix="/api/v1", tags=["sessions"])
 log = structlog.get_logger(__name__)
@@ -34,7 +29,6 @@ log = structlog.get_logger(__name__)
 
 @router.post("/sessions", response_model=SessionCreateResponse)
 async def create_conversation_session() -> SessionCreateResponse:
-    """Crea una sesión vacía (reset explícito: nueva sesión sin memoria previa)."""
     session = create_session()
     log.info(
         "session_endpoint_created",
@@ -46,7 +40,6 @@ async def create_conversation_session() -> SessionCreateResponse:
 
 @router.get("/sessions/{session_id}", response_model=SessionDetailResponse)
 async def read_conversation_session(session_id: str) -> SessionDetailResponse:
-    """Devuelve historial y metadata de proyecto de la sesión."""
     try:
         session = get_session(session_id)
     except SessionNotFoundError as exc:
@@ -73,12 +66,8 @@ async def estimate_in_session(
     detail_level: DetailLevel = Form(...),
     files: list[UploadFile] | None = File(default=None),
     settings: Settings = Depends(get_settings),
-    wrapper: LLMWrapper = Depends(get_llm_wrapper),
-    orchestrator: EstimationCacheOrchestrator | None = Depends(get_cache_orchestrator),
-    openai_client=Depends(get_openai_moderation_client),
-    metadata_client=Depends(get_async_openai_client),
+    service: EstimationService = Depends(get_estimation_service),
 ) -> EstimationResponse:
-    """Genera estimación multi-turno en sesión y soporta adjuntos opcionales."""
     files = files or []
     if files and not settings.attachments_enabled:
         raise HTTPException(status_code=400, detail="Attachments are disabled")
@@ -128,11 +117,15 @@ async def estimate_in_session(
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.errors()) from exc
 
-    return await run_estimation_pipeline(
-        request=request,
-        settings=settings,
-        wrapper=wrapper,
-        orchestrator=orchestrator,
-        openai_client=openai_client,
-        metadata_client=metadata_client,
-    )
+    try:
+        return await service.estimate(request)
+    except SessionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SessionExpiredError as exc:
+        raise HTTPException(status_code=410, detail=str(exc)) from exc
+    except GuardrailBlocked as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from exc
+    except PromptGuardrailError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except EstimationFailedError as exc:
+        raise HTTPException(status_code=502, detail=exc.message) from exc

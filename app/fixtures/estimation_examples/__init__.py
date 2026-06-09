@@ -6,8 +6,8 @@ import json
 from functools import lru_cache
 from pathlib import Path
 
-from app.schemas.estimation_common import ProjectType
-from app.schemas.estimation_output import EstimationResult
+from app.domain.schemas.estimation_common import ProjectType
+from app.domain.schemas.estimation_output import EstimationResult
 
 _EXAMPLES_DIR = Path(__file__).resolve().parent
 

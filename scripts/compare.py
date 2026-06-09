@@ -13,8 +13,8 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from ai_service.app.embedding_pipeline.embedder import OpenAIEmbedder
-from ai_service.app.ssl_utils import configure_ssl_certificates
+from app.generation.rag.embedding.embedder import OpenAIEmbedder
+from app.foundation.ssl_utils import configure_ssl_certificates
 
 
 def cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:

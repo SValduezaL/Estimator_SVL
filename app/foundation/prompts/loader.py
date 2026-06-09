@@ -13,10 +13,11 @@ import structlog
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from app.fixtures.estimation_examples import few_shot_json_block
-from app.prompts.registry import DEFAULT_ESTIMATION_BUNDLE, PromptBundle
-from app.memory.models import ProjectMetadata
-from app.schemas.estimation_common import ProjectType
-from app.schemas.estimation_request import EstimationRequest
+from app.foundation.prompts.registry import DEFAULT_ESTIMATION_BUNDLE, PromptBundle
+from app.generation.conversation.models import ProjectMetadata
+from app.domain.schemas.estimation_common import ProjectType
+from app.domain.schemas.estimation_output import EstimationResult
+from app.domain.schemas.estimation_request import EstimationRequest
 
 _PROMPTS_DIR = Path(__file__).resolve().parent
 _PROMPT_RENDER_PART_SEPARATOR = "\n\n---PROMPT_RENDER_SEPARATOR---\n\n"
@@ -118,3 +119,24 @@ def render_estimation_prompt(
         content_sha256=_sha256_hex(combined),
     )
     return system_prompt, user_prompt
+
+
+def render_critic_prompt(
+    *,
+    transcript: str,
+    metadata: ProjectMetadata,
+    tier: object,
+    result: EstimationResult,
+    version: str = "v1",
+) -> tuple[str, str]:
+    """Renderiza prompts del Critic (patrón Actor-Critic-Boss)."""
+    env = _cached_estimation_environment()
+    context = {
+        "transcript": transcript,
+        "metadata": metadata,
+        "tier": tier.value if hasattr(tier, "value") else str(tier),
+        "result": result,
+    }
+    system = env.get_template(f"critic/{version}/system.j2").render(**context)
+    user = env.get_template(f"critic/{version}/user.j2").render(**context)
+    return system, user

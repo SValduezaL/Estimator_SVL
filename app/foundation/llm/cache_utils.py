@@ -1,5 +1,5 @@
-"""Shim de compatibilidad — usar ``app.cache``."""
+"""Utilidades de caché LLM — ver ``app.generation.cag``."""
 
-from app.cache.exact import EstimationCache, EstimationExactCache
+from app.generation.cag.exact import EstimationCache, EstimationExactCache
 
 __all__ = ["EstimationCache", "EstimationExactCache"]

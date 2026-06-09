@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.attachments.extractor import (
+from app.foundation.attachments.extractor import (
     AttachmentExtractionError,
     UnsupportedAttachmentError,
     enrich_transcript,
@@ -16,7 +16,7 @@ def test_extract_text_unsupported_extension() -> None:
 
 
 def test_extract_text_pdf_uses_truncation(monkeypatch: pytest.MonkeyPatch) -> None:
-    from app.attachments import extractor
+    from app.foundation.attachments import extractor
 
     monkeypatch.setattr(extractor, "_extract_pdf", lambda _content: "a" * 30)
     text = extract_text(filename="scope.pdf", content=b"%PDF", max_chars=10)
@@ -24,7 +24,7 @@ def test_extract_text_pdf_uses_truncation(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_extract_text_docx_wraps_parser_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    from app.attachments import extractor
+    from app.foundation.attachments import extractor
 
     def boom(_content: bytes) -> str:
         raise RuntimeError("broken file")

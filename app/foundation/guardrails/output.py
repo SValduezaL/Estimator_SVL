@@ -5,21 +5,21 @@ from __future__ import annotations
 import hashlib
 
 from app.config import Settings
-from app.guardrails.exceptions import GuardrailBlocked
-from app.guardrails.filters import (
+from app.foundation.guardrails.exceptions import GuardrailBlocked
+from app.foundation.guardrails.filters import (
     build_safe_fallback,
     degrade_low_confidence,
     enforce_scope_response,
 )
-from app.guardrails.judge import JudgeContext, run_output_judges
-from app.guardrails.pii import redact_pii
-from app.guardrails.policies import apply_output_policy
-from app.guardrails.types import FailurePolicy
-from app.guardrails.telemetry import log_guardrail_event, log_policy_applied
-from app.guardrails.types import GuardrailCheckResult, OutputGuardrailContext
-from app.guardrails.validators import run_semantic_validators
-from app.schemas.estimation_common import DetailLevel, ProjectType
-from app.schemas.estimation_output import EstimationResult
+from app.foundation.guardrails.judge import JudgeContext, run_output_judges
+from app.foundation.guardrails.pii import redact_pii
+from app.foundation.guardrails.policies import apply_output_policy
+from app.foundation.guardrails.types import FailurePolicy
+from app.foundation.guardrails.telemetry import log_guardrail_event, log_policy_applied
+from app.foundation.guardrails.types import GuardrailCheckResult, OutputGuardrailContext
+from app.foundation.guardrails.validators import run_semantic_validators
+from app.domain.schemas.estimation_common import DetailLevel, ProjectType
+from app.domain.schemas.estimation_output import EstimationResult
 
 
 def _apply_filter(check: GuardrailCheckResult, current: EstimationResult) -> EstimationResult:

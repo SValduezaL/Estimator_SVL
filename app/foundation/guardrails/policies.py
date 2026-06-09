@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from app.guardrails.exceptions import (
+from app.foundation.guardrails.exceptions import (
     GuardrailBlocked,
     InputGuardrailViolation,
     OutputGuardrailRetryable,
 )
-from app.guardrails.types import FailurePolicy, GuardrailCheckResult, InputViolationReason
+from app.foundation.guardrails.types import FailurePolicy, GuardrailCheckResult, InputViolationReason
 
 
 def apply_input_policy(

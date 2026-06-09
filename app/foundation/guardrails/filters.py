@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import structlog
 
-from app.schemas.estimation_common import LOW_CONFIDENCE_THRESHOLD, OUT_OF_SCOPE_PREFIX
-from app.schemas.estimation_common import DetailLevel, ProjectType
-from app.schemas.estimation_output import EstimationResult, Phase
+from app.domain.schemas.estimation_common import LOW_CONFIDENCE_THRESHOLD, OUT_OF_SCOPE_PREFIX
+from app.domain.schemas.estimation_common import DetailLevel, ProjectType
+from app.domain.schemas.estimation_output import EstimationResult, Phase
 
 log = structlog.get_logger(__name__)
 

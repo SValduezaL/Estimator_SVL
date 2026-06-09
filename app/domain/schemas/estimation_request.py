@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel, Field
 
-from app.schemas.estimation_common import DetailLevel, ProjectType
+from app.domain.schemas.estimation_common import DetailLevel, ProjectType
 
 
 @dataclass

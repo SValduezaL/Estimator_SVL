@@ -6,15 +6,15 @@ from typing import Any
 
 import structlog
 
-from app.memory.constants import MAX_HISTORY_TURNS
-from app.memory.anchors import update_anchors_from_turn
-from app.memory.compression_policy import CompressionPolicy
-from app.memory.exceptions import MetadataExtractionError
-from app.memory.extractor import update_metadata_llm
-from app.memory.models import Message, ProjectMetadata, Session
-from app.memory.summary import update_running_summary_llm
-from app.memory.store import update_session
-from app.schemas.estimation_output import EstimationResult
+from app.generation.conversation.constants import MAX_HISTORY_TURNS
+from app.generation.conversation.compression.anchors import update_anchors_from_turn
+from app.generation.conversation.compression.compression_policy import CompressionPolicy
+from app.generation.conversation.exceptions import MetadataExtractionError
+from app.generation.conversation.metadata_extractor import update_metadata_llm
+from app.generation.conversation.models import Message, ProjectMetadata, Session
+from app.generation.conversation.compression.summary import update_running_summary_llm
+from app.generation.conversation.store import update_session
+from app.domain.schemas.estimation_output import EstimationResult
 
 log = structlog.get_logger(__name__)
 

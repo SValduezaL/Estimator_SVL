@@ -5,10 +5,10 @@ La composici√≥n de prompts (system/user) vive en ``app/prompts/`` y se invoca v√
 """
 
 from app.config import Settings, get_settings
-from app.memory.models import ProjectMetadata
-from app.prompts.loader import render_estimation_prompt
-from app.prompts.registry import DEFAULT_ESTIMATION_BUNDLE, PromptBundle
-from app.schemas.estimation_request import EstimationRequest
+from app.generation.conversation.models import ProjectMetadata
+from app.foundation.prompts.loader import render_estimation_prompt
+from app.foundation.prompts.registry import DEFAULT_ESTIMATION_BUNDLE, PromptBundle
+from app.domain.schemas.estimation_request import EstimationRequest
 
 
 def build_estimation_cache_inputs(

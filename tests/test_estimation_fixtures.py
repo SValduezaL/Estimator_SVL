@@ -3,8 +3,8 @@
 import pytest
 
 from app.fixtures.estimation_examples import load_validated_example
-from app.schemas.estimation_common import DetailLevel, ProjectType
-from app.services.structured_llm import assert_reasoning_length
+from app.domain.schemas.estimation_common import DetailLevel, ProjectType
+from app.foundation.llm.structured import assert_reasoning_length
 
 
 @pytest.mark.parametrize("project_type", list(ProjectType))

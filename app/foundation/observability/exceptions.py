@@ -8,7 +8,7 @@ from fastapi.exceptions import RequestValidationError
 from starlette.responses import JSONResponse
 
 from app.config import get_settings
-from app.guardrails.exceptions import GuardrailBlocked, InputGuardrailViolation
+from app.foundation.guardrails.exceptions import GuardrailBlocked, InputGuardrailViolation
 
 log = structlog.get_logger(__name__)
 

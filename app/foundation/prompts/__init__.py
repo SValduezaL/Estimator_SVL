@@ -1,6 +1,6 @@
 """Artefactos de prompts versionados (plantillas Jinja2)."""
 
-from app.prompts.registry import (
+from app.foundation.prompts.registry import (
     DEFAULT_ESTIMATION_BUNDLE,
     ESTIMATION_BUNDLE_V1,
     ESTIMATION_BUNDLE_V2,
@@ -9,7 +9,7 @@ from app.prompts.registry import (
     PromptBundle,
     get_estimation_bundle,
 )
-from app.prompts.loader import (
+from app.foundation.prompts.loader import (
     build_estimation_jinja_environment,
     render_estimation_prompt,
 )

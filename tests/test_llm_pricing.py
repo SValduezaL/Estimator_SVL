@@ -1,6 +1,6 @@
 """Tests de resolución de precios por modelo."""
 
-from app.services.llm_pricing import estimate_cost_usd, resolve_model_costs
+from app.foundation.llm.pricing import estimate_cost_usd, resolve_model_costs
 
 
 def test_resolve_model_costs_versioned_openai_id() -> None:

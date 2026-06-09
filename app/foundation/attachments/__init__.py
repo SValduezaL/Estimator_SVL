@@ -1,6 +1,6 @@
 """Utilidades de extracción de adjuntos."""
 
-from app.attachments.extractor import (
+from app.foundation.attachments.extractor import (
     AttachmentExtractionError,
     SUPPORTED_ATTACHMENT_EXTENSIONS,
     UnsupportedAttachmentError,

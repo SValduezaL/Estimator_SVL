@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.memory.models import Session
+from app.generation.conversation.models import Session
 
 
 def compose_memory_context(session: Session) -> list[dict[str, str]]:

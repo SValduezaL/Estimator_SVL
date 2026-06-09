@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import streamlit as st
 
-from app.prompts.loader import render_estimation_prompt
-from app.schemas.estimation import (
+from app.foundation.prompts.loader import render_estimation_prompt
+from app.domain.schemas.estimation import (
     DETAIL_LEVEL_LABELS,
     PROJECT_TYPE_LABELS,
     DetailLevel,
     EstimationRequest,
     ProjectType,
 )
-from app.memory.models import ProjectMetadata
+from app.generation.conversation.models import ProjectMetadata
 from frontend.state.session_state import get_active_session_id, get_session_record
 from frontend.styles.constants import MAX_PROMPT_PREVIEW_CHARS, MIN_DESCRIPTION_LEN
 

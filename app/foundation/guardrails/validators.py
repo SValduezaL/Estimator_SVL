@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from app.config import Settings
-from app.guardrails.pii import check_pii, redact_pii
-from app.guardrails.types import FailurePolicy
-from app.guardrails.types import GuardrailCheckResult
-from app.schemas.estimation_common import LOW_CONFIDENCE_THRESHOLD, OUT_OF_SCOPE_PREFIX
-from app.schemas.estimation_output import EstimationResult
+from app.foundation.guardrails.pii import check_pii, redact_pii
+from app.foundation.guardrails.types import FailurePolicy
+from app.foundation.guardrails.types import GuardrailCheckResult
+from app.domain.schemas.estimation_common import LOW_CONFIDENCE_THRESHOLD, OUT_OF_SCOPE_PREFIX
+from app.domain.schemas.estimation_output import EstimationResult
 
 
 def validate_cost_coherence(result: EstimationResult, *, settings: Settings) -> GuardrailCheckResult:

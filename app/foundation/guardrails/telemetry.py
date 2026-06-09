@@ -9,7 +9,7 @@ from typing import Any, Iterator
 
 import structlog
 
-from app.guardrails.types import FailurePolicy
+from app.foundation.guardrails.types import FailurePolicy
 
 log = structlog.get_logger(__name__)
 

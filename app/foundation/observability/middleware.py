@@ -10,7 +10,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
-from app.logging.context import bind_request_context, clear_request_context
+from app.foundation.observability.context import bind_request_context, clear_request_context
 
 _log = structlog.get_logger(__name__)
 _REQUEST_ID_HEADER = "X-Request-ID"
