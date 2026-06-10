@@ -5,9 +5,13 @@ from __future__ import annotations
 import ssl
 from typing import Any
 
+from collections.abc import AsyncGenerator
+
 from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
+from app.foundation.persistence.database import get_async_session
 from app.domain.estimation_service import EstimationService
 from app.foundation.guardrails.pipeline import create_openai_client
 from app.foundation.llm.runtime_config import RuntimeModelConfig
@@ -147,6 +151,11 @@ def get_runtime_config(
 
 def get_chunker() -> JSONStructuralChunker:
     return JSONStructuralChunker()
+
+
+async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
+    async for session in get_async_session():
+        yield session
 
 
 def get_embedder(

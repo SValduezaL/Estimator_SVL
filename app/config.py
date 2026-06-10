@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     llm_timeout_seconds: int = Field(default=30, ge=5, le=600)
     llm_num_retries: int = Field(default=2, ge=0, le=10)
     
+    # PostgreSQL + pgvector (S8)
+    database_url: str = Field(
+        default="postgresql+asyncpg://estimator:estimator@localhost:5432/estimator",
+    )
+
     # Caché Redis (opcional): vacío = sin caché; p. ej. redis://redis:6379/0 en Compose
     redis_url: str | None = Field(default=None)
     cache_ttl_seconds: int = Field(default=86400, ge=60, le=604800)

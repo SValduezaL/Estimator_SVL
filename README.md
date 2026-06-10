@@ -104,6 +104,7 @@ app/                              # API FastAPI (monolito :8000)
 │   ├── estimations.py            # POST /api/v1/estimate
 │   ├── sessions.py               # POST/GET sessions, POST .../estimate (multipart)
 │   ├── embeddings.py             # POST /embeddings/ingest, /embeddings/compare
+│   ├── search.py                 # POST /search
 │   └── config.py                 # GET/PUT /api/v1/config/models
 ├── domain/
 │   ├── schemas/                  # Contratos HTTP (estimation_*, session)
@@ -248,6 +249,7 @@ flowchart TD
 | `api/estimations.py` | `POST /api/v1/estimate` |
 | `api/sessions.py` | `POST /api/v1/sessions`, `GET /api/v1/sessions/{id}`, `POST /api/v1/sessions/{id}/estimate` |
 | `api/embeddings.py` | `POST /embeddings/ingest`, `POST /embeddings/compare` |
+| `api/search.py` | `POST /search` |
 | `api/config.py` | `GET/PUT /api/v1/config/models` |
 
 ---
@@ -493,21 +495,45 @@ Chunking estructural y **8 estrategias** comparables bajo `app/generation/rag/`:
 
 | Endpoint | Descripción |
 |---|---|
-| `POST /embeddings/ingest` | Chunk + embed presupuestos JSON |
-| `POST /embeddings/compare` | Compara estrategias de chunking |
+| `POST /embeddings/ingest` | Chunk + embed + persistir presupuesto en PostgreSQL |
+| `POST /embeddings/compare` | Compara estrategias de chunking (en memoria) |
+| `POST /search` | Búsqueda semántica sobre chunks persistidos |
 | `GET/PUT /api/v1/config/models` | Overrides de modelos en runtime (Redis) |
 
-Datos de ejemplo: [`data/budgets_sample.json`](data/budgets_sample.json), [`data/ingest_example_single_budget.json`](data/ingest_example_single_budget.json).
+Datos de ejemplo: [`data/budgets_sample.json`](data/budgets_sample.json), [`data/ingest_example_persist.json`](data/ingest_example_persist.json).
 
 ```bash
 curl -X POST "http://127.0.0.1:8000/embeddings/ingest" \
   -H "Content-Type: application/json" \
-  -d "@data/ingest_example_single_budget.json"
+  -d "@data/ingest_example_persist.json"
 
-uv run python scripts/compare.py \
-  --text-a "OAuth 2.0 authentication backend for fintech" \
-  --text-b "JWT-based authorization service for banking app"
+curl -X POST "http://127.0.0.1:8000/search" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "REST API with OAuth authentication for fintech sector", "k": 5}'
 ```
+
+---
+
+## Persistencia vectorial (S8)
+
+PostgreSQL 16 + pgvector almacena presupuestos históricos como `documents` + `chunks` (cada chunk con embedding `vector(1536)`). Schema gestionado con Alembic async.
+
+```bash
+docker compose up -d
+docker compose run --rm estimator alembic upgrade head
+uv run python scripts/ingest_corpus.py
+docker compose run --rm estimator python scripts/query_examples.py
+```
+
+### Decisiones de diseño
+
+**(a) Dos tablas (`documents` + `chunks`) en vez de una.** Un presupuesto genera N chunks. Una sola tabla duplicaría la metadata del documento en cada fila y perdería integridad referencial. Con `ON DELETE CASCADE`, eliminar un presupuesto elimina automáticamente todos sus chunks.
+
+**(b) Metadata variable en JSONB.** Campos estables (`document_type`, `chunk_type`, fechas) van en columnas tipadas; metadata enriquecible por el chunker (sector, tecnologías, scope) va en JSONB. El índice GIN sobre `chunks.metadata` permite consultas por claves arbitrarias sin migrar el schema cada vez.
+
+**(c) `cosine_distance` (operador `<=>`).** Los embeddings de OpenAI están normalizados; coseno e inner product serían equivalentes. Usamos coseno por convención RAG y para alinear con el índice HNSW `vector_cosine_ops` que se añadirá en el directo.
+
+**(d) Sin índice vectorial (deliberado).** Postgres hace sequential scan completo. Para el corpus de ejemplo (decenas de documentos, cientos de chunks) la latencia es aceptable y sirve de baseline para medir el impacto del índice en sesión en vivo.
 
 ---
 
@@ -854,8 +880,9 @@ curl -X POST "http://127.0.0.1:8000/api/v1/sessions/$SESSION/estimate" \
 | `GET` | `/health` | Estado (`ok`) |
 | `GET` | `/ready` | Readiness (stub) |
 | `GET` | `/docs` | OpenAPI Swagger UI |
-| `POST` | `/embeddings/ingest` | Ingesta RAG |
+| `POST` | `/embeddings/ingest` | Ingesta RAG (persiste en PostgreSQL) |
 | `POST` | `/embeddings/compare` | Comparar chunking |
+| `POST` | `/search` | Búsqueda semántica vectorial |
 | `GET/PUT` | `/api/v1/config/models` | Config runtime modelos |
 
 ---

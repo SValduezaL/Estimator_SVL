@@ -48,6 +48,9 @@ WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 COPY app/ /app/app/
 COPY data/ /app/data/
+COPY alembic/ /app/alembic/
+COPY scripts/ /app/scripts/
+COPY alembic.ini /app/alembic.ini
 
 RUN chown -R appuser:appgroup /app
 

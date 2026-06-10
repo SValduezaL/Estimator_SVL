@@ -54,7 +54,7 @@ app/
 
 - `POST /api/v1/estimate`
 - `POST /api/v1/sessions`, `GET /api/v1/sessions/{id}`, `POST /api/v1/sessions/{id}/estimate`
-- `POST /embeddings/ingest`, `POST /embeddings/compare`
+- `POST /embeddings/ingest`, `POST /embeddings/compare`, `POST /search`
 - `GET/PUT /api/v1/config/models`
 
 ## 5. ¿Dónde va mi código nuevo?
