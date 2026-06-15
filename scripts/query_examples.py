@@ -1,21 +1,42 @@
 #!/usr/bin/env python3
-"""Run representative semantic search queries against POST /search."""
+"""Semantic-search smoke test against the persisted corpus (Session 8).
+
+Exercises the real retrieval path — HTTP against ``POST /embeddings/ingest`` and
+``POST /search`` — with five queries that probe the corpus from different angles
+(direct match, semantic reformulation, out-of-domain, ambiguous, highly specific).
+
+Idempotent: it first ingests ``data/budgets_sample.json`` (one document per
+budget); documents already persisted answer 409 and are skipped, so re-running
+the script never duplicates data.
+
+Usage::
+
+    # stack up first: docker compose up -d
+    docker compose run --rm estimator python scripts/query_examples.py
+
+    # or from the host (with the API on localhost:8000):
+    uv run python scripts/query_examples.py
+
+The base URL is taken from ``ESTIMATOR_API_BASE_URL`` or ``ESTIMATOR_BASE_URL``
+if set; otherwise the script probes ``http://localhost:8000`` and
+``http://estimator:8000`` (the compose network alias) via ``GET /health``.
+"""
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
 
 import httpx
 
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
+ROOT = Path(__file__).resolve().parent.parent
+CORPUS_PATH = ROOT / "data" / "budgets_sample.json"
 
-DEFAULT_API_BASE = os.environ.get("ESTIMATOR_API_BASE_URL", "http://localhost:8000")
-CONTENT_PREVIEW_CHARS = 120
+CANDIDATE_BASE_URLS = ("http://localhost:8000", "http://estimator:8000")
 
+# Single source of truth for benchmark scripts (s08_common.py imports this list).
 QUERIES: list[tuple[str, str]] = [
     (
         "sanity_direct_match",
@@ -39,43 +60,83 @@ QUERIES: list[tuple[str, str]] = [
     ),
 ]
 
-
-def preview(text: str, limit: int = CONTENT_PREVIEW_CHARS) -> str:
-    flat = " ".join(text.split())
-    if len(flat) <= limit:
-        return flat
-    return flat[: limit - 1] + "…"
+TOP_K = 5
+CONTENT_PREVIEW_CHARS = 120
 
 
-def main() -> None:
-    base_url = DEFAULT_API_BASE.rstrip("/")
+def resolve_base_url(client: httpx.Client) -> str:
+    """Honour ESTIMATOR_API_BASE_URL / ESTIMATOR_BASE_URL; otherwise probe defaults."""
+    explicit = os.environ.get("ESTIMATOR_API_BASE_URL") or os.environ.get("ESTIMATOR_BASE_URL")
+    candidates = (explicit,) if explicit else CANDIDATE_BASE_URLS
+    for base_url in candidates:
+        try:
+            if client.get(f"{base_url}/health").status_code == 200:
+                return base_url
+        except httpx.TransportError:
+            continue
+    print(
+        "ERROR: no estimator API reachable. Start the stack (docker compose up -d) "
+        "or set ESTIMATOR_API_BASE_URL.",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
 
-    with httpx.Client(timeout=60.0) as client:
-        for label, query in QUERIES:
-            print("=" * 80)
-            print(f"Query [{label}]: {query}")
-            print("-" * 80)
 
-            response = client.post(
-                f"{base_url}/search",
-                json={"query": query, "k": 5},
+def ingest_corpus(client: httpx.Client, base_url: str) -> None:
+    """One document per budget; 409 means already ingested (idempotent)."""
+    budgets = json.loads(CORPUS_PATH.read_text(encoding="utf-8"))
+    created, skipped = 0, 0
+    for budget in budgets:
+        response = client.post(
+            f"{base_url}/embeddings/ingest",
+            json={
+                "source_path": f"data/budgets/{budget['budget_id']}.json",
+                "document_type": "historical_budget",
+                "content": budget,
+            },
+        )
+        if response.status_code == 200:
+            created += 1
+        elif response.status_code == 409:
+            skipped += 1
+        else:
+            print(
+                f"ERROR ingesting {budget['budget_id']}: "
+                f"{response.status_code} {response.text[:200]}",
+                file=sys.stderr,
             )
-            response.raise_for_status()
-            body = response.json()
+            raise SystemExit(1)
 
-            print(f"search_time_ms: {body['search_time_ms']}")
-            if not body["results"]:
-                print("(no results)")
-                continue
+    print(f"Corpus: {len(budgets)} budgets — {created} ingested, {skipped} already present.")
 
-            for rank, item in enumerate(body["results"], start=1):
-                print(
-                    f"  {rank}. chunk_id={item['chunk_id']} "
-                    f"distance={item['distance']:.4f} "
-                    f"chunk_type={item['chunk_type']}"
-                )
-                print(f"     {preview(item['content'])}")
+
+def run_queries(client: httpx.Client, base_url: str) -> None:
+    for index, (label, query) in enumerate(QUERIES, start=1):
+        response = client.post(f"{base_url}/search", json={"query": query, "k": TOP_K})
+        response.raise_for_status()
+        body = response.json()
+
+        print()
+        print(f"[{index}/5] {label}")
+        print(f'  query: "{query}"')
+        print(f"  search_time_ms: {body['search_time_ms']}")
+        print(f"  {'chunk_id':>8} {'distance':>8} {'chunk_type':<18} content")
+        for hit in body["results"]:
+            preview = " ".join(hit["content"].split())[:CONTENT_PREVIEW_CHARS]
+            print(
+                f"  {hit['chunk_id']:>8} {hit['distance']:>8.4f} "
+                f"{hit['chunk_type']:<18} {preview}"
+            )
+
+
+def main() -> int:
+    with httpx.Client(timeout=120.0) as client:
+        base_url = resolve_base_url(client)
+        print(f"Estimator API: {base_url}")
+        ingest_corpus(client, base_url)
+        run_queries(client, base_url)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

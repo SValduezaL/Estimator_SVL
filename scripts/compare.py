@@ -1,5 +1,21 @@
 #!/usr/bin/env python3
-"""Compare cosine similarity between two texts using OpenAI embeddings."""
+"""Embedding sanity check — cosine similarity between two texts.
+
+Embeds two texts with ``text-embedding-3-small`` (reusing ``OpenAIEmbedder``)
+and prints their cosine similarity. Cosine is computed by hand with the stdlib
+``math`` module — no numpy / scikit-learn.
+
+Usage::
+
+    # outside the container (from the repo root, with .env present):
+    uv run python scripts/compare.py \\
+        --text-a "OAuth 2.0 authentication backend for fintech" \\
+        --text-b "JWT-based authorization service for banking app"
+
+    # inside the container:
+    docker compose exec estimator python scripts/compare.py \\
+        --text-a "..." --text-b "..."
+"""
 
 from __future__ import annotations
 
@@ -8,46 +24,46 @@ import math
 import sys
 from pathlib import Path
 
-# Repo root on sys.path when run as: python ai_service/scripts/compare.py
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-from app.generation.rag.embedding.embedder import OpenAIEmbedder
-from app.foundation.ssl_utils import configure_ssl_certificates
+from app.config import get_settings  # noqa: E402
+from app.generation.rag.embedding.embedder import OpenAIEmbedder  # noqa: E402
 
 
-def cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
-    """Cosine similarity between two equal-length vectors."""
-    if len(vec_a) != len(vec_b):
-        raise ValueError("Vectors must have the same dimensionality")
-    dot = sum(a * b for a, b in zip(vec_a, vec_b))
-    norm_a = math.sqrt(sum(a * a for a in vec_a))
-    norm_b = math.sqrt(sum(b * b for b in vec_b))
-    if norm_a == 0 or norm_b == 0:
-        raise ValueError("Cannot compute similarity for zero-norm vectors")
+def cosine_similarity(a: list[float], b: list[float]) -> float:
+    """Dot product divided by the product of the L2 norms."""
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(y * y for y in b))
+    if norm_a == 0.0 or norm_b == 0.0:
+        return 0.0
     return dot / (norm_a * norm_b)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Embed two texts and print cosine similarity.",
-    )
-    parser.add_argument("--text-a", required=True, help="First text to embed")
-    parser.add_argument("--text-b", required=True, help="Second text to embed")
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Cosine similarity between two embedded texts.")
+    parser.add_argument("--text-a", required=True, help="First text.")
+    parser.add_argument("--text-b", required=True, help="Second text.")
     args = parser.parse_args()
 
-    configure_ssl_certificates()
-    embedder = OpenAIEmbedder()
+    settings = get_settings()
+    if not settings.openai_api_key:
+        print("ERROR: OPENAI_API_KEY is not set (check your .env).", file=sys.stderr)
+        return 1
 
-    vector_a = embedder.embed_one(args.text_a)
-    vector_b = embedder.embed_one(args.text_b)
-    similarity = cosine_similarity(vector_a, vector_b)
+    embedder = OpenAIEmbedder(model=settings.semantic_embedding_model)
+
+    vec_a = embedder.embed_one(args.text_a)
+    vec_b = embedder.embed_one(args.text_b)
+    similarity = cosine_similarity(vec_a, vec_b)
 
     print(f"Text A: {args.text_a}")
     print(f"Text B: {args.text_b}")
     print(f"Cosine similarity: {similarity:.4f}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

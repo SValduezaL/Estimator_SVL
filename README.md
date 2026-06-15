@@ -20,6 +20,8 @@ Incluye **memoria conversacional** multi-turno (`session_id`: historial con vent
 - [Memoria conversacional](#memoria-conversacional-appgenerationconversation)
 - [Adjuntos](#adjuntos-appfoundationattachments)
 - [RAG y embeddings (S7)](#rag-y-embeddings-s7)
+- [Persistencia vectorial (S8)](#persistencia-vectorial-s8)
+- [Scripts de operación](scripts/README.md)
 - [Interfaz Streamlit](#interfaz-streamlit-frontend)
 - [Variables de entorno](#variables-de-entorno)
 - [Logging estructurado](#logging-estructurado)
@@ -534,6 +536,14 @@ docker compose run --rm estimator python scripts/query_examples.py
 **(c) `cosine_distance` (operador `<=>`).** Los embeddings de OpenAI están normalizados; coseno e inner product serían equivalentes. Usamos coseno por convención RAG y para alinear con el índice HNSW `vector_cosine_ops` que se añadirá en el directo.
 
 **(d) Sin índice vectorial (deliberado).** Postgres hace sequential scan completo. Para el corpus de ejemplo (decenas de documentos, cientos de chunks) la latencia es aceptable y sirve de baseline para medir el impacto del índice en sesión en vivo.
+
+### Scripts
+
+La carpeta [`scripts/`](scripts/README.md) agrupa utilidades CLI para el corpus y los benchmarks de la Sesión 08: ingesta del corpus (`ingest_corpus.py`), smoke test HTTP (`query_examples.py`), medición de latencia SQL (`measure_baseline_s08.py`), barrido de `ef_search`, comparación vector/halfvec y los SQL de índices HNSW en `scripts/sql_S08/`. Detalle de cada script, orden de ejecución y prerequisitos en [`scripts/README.md`](scripts/README.md).
+
+**Ejecución en Docker:** los scripts que llaman al API (`ingest_corpus.py`, `query_examples.py`) deben lanzarse con `docker compose exec estimator` sobre el contenedor ya en marcha, o desde el host con `uv run`. `docker compose run` crea un contenedor efímero donde `localhost:8000` no alcanza el servicio API → `Connection refused`.
+
+**Índices HNSW y planner:** crear el índice no garantiza que Postgres lo use. Con ~30k filas, `ORDER BY embedding <=> … LIMIT k` puede resolverse con sequential scan + heapsort; el índice halfvec sí suele activarse cuando la query repite la expresión casteada. Validar siempre con `EXPLAIN ANALYZE` y `report_index_sizes_s08.py` (`idx_scan`).
 
 ---
 
