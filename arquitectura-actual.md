@@ -129,7 +129,11 @@ first component : 0.006233
 last component  : 0.019012
 ```
 
-**Comentario:** El vector resume la reunión entera (~2.800 caracteres): diálogo consultor/cliente, timestamps, divagación sobre Francia y la sobrina, y mezcla de necesidades (tienda online, club de puntos, panel, pagos). La norma L2 ≈ 1 confirma embedding normalizado. Es un embedding de **mucho ruido conversacional** frente a chunks de presupuesto estructurados (~300 tokens con cabeceras `[Project:…]`, sector y componente). Existe `TranscriptTxtParser` en S6 (partiría la transcripción en ~10 `Document` por turno), pero **este trace no lo usa** y, aunque lo usara, S6 no escribe en pgvector.
+**Comentarios:**
+- El vector resume la reunión entera (aprox. 2.800 caracteres): diálogo consultor/cliente, timestamps, divagación sobre Francia y la sobrina, y mezcla de necesidades (tienda online, club de puntos, panel, pagos).
+- La norma L2 ≈ 1 confirma embedding normalizado.
+- Es un embedding de **mucho ruido conversacional** frente a chunks de presupuesto estructurados (~300 tokens con cabeceras `[Project:…]`, sector y componente).
+- Existe `TranscriptTxtParser` en S6 (partiría la transcripción en ~10 `Document` por turno), pero **este trace no lo usa** y, aunque lo usara, S6 no escribe en pgvector.
 
 ### Paso 2 — Búsqueda semántica (top-5)
 
@@ -241,7 +245,9 @@ results         : 5
 }
 ```
 
-**Comentario:** Las cinco distancias coseno caen en un rango estrecho (0.597–0.640, Δ ≈ 0.04) para una query de ~2.800 caracteres frente a chunks de ~150–200 palabras. El retrieval devuelve solo sector `ecommerce` (coherente con “vender por internet”), pero los cuatro primeros hits son **el mismo presupuesto** (`BUD-2024-003`, headless enterprise) repetido por componente — no hay diversidad ni deduplicación por documento.
+**Comentarios:**
+- Las cinco distancias coseno caen en un rango estrecho (0.597–0.640, Δ ≈ 0.04) para una query de aprox. 2.800 caracteres frente a chunks de 150–200 palabras.
+- El retrieval devuelve solo sector `ecommerce` (coherente con “vender por internet”), pero los cuatro primeros hits son **el mismo presupuesto** (`BUD-2024-003`, headless enterprise) repetido por componente — no hay diversidad ni deduplicación por documento.
 
 ### Paso 3 — Lectura de los chunks devueltos
 
