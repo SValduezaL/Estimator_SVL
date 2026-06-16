@@ -1,0 +1,73 @@
+{
+  "budget_id": "BUD-2023-025",
+  "client_metadata": {
+    "name": "TeleHealth Plus",
+    "sector": "healthcare",
+    "country": "BR"
+  },
+  "project_summary": "Video teleconsultation platform with e-prescription and integration to national health insurer",
+  "main_technology": "ruby_on_rails",
+  "year": 2023,
+  "total_estimated_hours": 430,
+  "components": [
+    {
+      "component_id": "VIDEO-1401",
+      "name": "WebRTC video consultation room",
+      "description": "HIPAA-ready video sessions with waiting room, screen share, and session recording opt-in.",
+      "tech_stack": [
+        "ruby_on_rails",
+        "twilio_video",
+        "redis",
+        "postgresql"
+      ],
+      "estimated_hours": 130,
+      "complexity": "high",
+      "dependencies": []
+    },
+    {
+      "component_id": "RX-1402",
+      "name": "Electronic prescription module",
+      "description": "Medication search, dosage validation, digital signature, and pharmacy network dispatch.",
+      "tech_stack": [
+        "ruby_on_rails",
+        "postgresql",
+        "pdf_generation"
+      ],
+      "estimated_hours": 100,
+      "complexity": "medium",
+      "dependencies": [
+        "VIDEO-1401"
+      ]
+    },
+    {
+      "component_id": "INS-1403",
+      "name": "Health insurer eligibility API",
+      "description": "Real-time coverage verification and copay calculation for Brazilian operator integrations.",
+      "tech_stack": [
+        "ruby_on_rails",
+        "postgresql",
+        "soap"
+      ],
+      "estimated_hours": 120,
+      "complexity": "high",
+      "dependencies": []
+    },
+    {
+      "component_id": "PAT-1404",
+      "name": "Patient booking portal",
+      "description": "Specialty search, insurance filter, appointment reminders via WhatsApp Business API.",
+      "tech_stack": [
+        "ruby_on_rails",
+        "hotwire",
+        "postgresql",
+        "whatsapp_api"
+      ],
+      "estimated_hours": 80,
+      "complexity": "low",
+      "dependencies": [
+        "VIDEO-1401",
+        "INS-1403"
+      ]
+    }
+  ]
+}

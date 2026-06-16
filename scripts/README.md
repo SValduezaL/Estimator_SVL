@@ -32,9 +32,46 @@ docker compose run --rm estimator alembic upgrade head
 
 ---
 
-## Corpus e ingesta
+## Ingesta offline (S6)
 
-### `ingest_corpus.py`
+Pipeline separado del RAG (`POST /embeddings/ingest`): catalog → loader → parser → `Document`.
+Los jobs async se registran en `ingestion_jobs` (requiere migración `0002`).
+
+### `populate_seed_data.py`
+
+Genera `data/seed/budgets/` (1 JSON por presupuesto desde `budgets_sample.json`) y copia
+transcripciones S9 a `data/seed/transcripts/`.
+
+```bash
+.\.venv\Scripts\python.exe scripts/populate_seed_data.py
+```
+
+### `run_ingestion.py`
+
+Dispara ingesta offline sin HTTP para una fuente del catálogo (`decision: include`).
+
+```bash
+.\.venv\Scripts\python.exe scripts/run_ingestion.py presupuestos_json
+.\.venv\Scripts\python.exe scripts/run_ingestion.py transcripciones_txt
+```
+
+Validación del catálogo y datos:
+
+```bash
+.\.venv\Scripts\python.exe -m app.ingestion.catalog.loader data/catalog/catalog.yaml
+.\.venv\Scripts\python.exe -m app.ingestion.catalog.inspect data/seed
+.\.venv\Scripts\python.exe -m app.ingestion.architecture
+```
+
+API (con API en marcha):
+
+```bash
+curl -X POST http://localhost:8000/api/v1/ingestion/runs \
+  -H "Content-Type: application/json" \
+  -d "{\"source_name\": \"presupuestos_json\"}"
+```
+
+### `ingest_corpus.py` (S7 — RAG)
 
 Ingesta todos los presupuestos de `data/budgets_sample.json` vía `POST /embeddings/ingest`. Un documento por budget; si ya existe (409), lo omite.
 

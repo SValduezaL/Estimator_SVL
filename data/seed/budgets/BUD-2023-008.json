@@ -1,0 +1,88 @@
+{
+  "budget_id": "BUD-2023-008",
+  "client_metadata": {
+    "name": "PayFlow",
+    "sector": "finance",
+    "country": "DE"
+  },
+  "project_summary": "B2B payment orchestration platform with multi-currency settlement and webhook notifications",
+  "main_technology": "node_express",
+  "year": 2023,
+  "total_estimated_hours": 620,
+  "components": [
+    {
+      "component_id": "PAY-101",
+      "name": "Payment gateway abstraction layer",
+      "description": "Unified adapter pattern for Stripe, Adyen, and SEPA direct debit with idempotent charge creation and automatic retry policies.",
+      "tech_stack": [
+        "node_express",
+        "typescript",
+        "postgresql"
+      ],
+      "estimated_hours": 140,
+      "complexity": "high",
+      "dependencies": []
+    },
+    {
+      "component_id": "FX-102",
+      "name": "Multi-currency settlement engine",
+      "description": "Real-time FX rate ingestion, ledger entries per currency, and end-of-day reconciliation reports for treasury teams.",
+      "tech_stack": [
+        "node_express",
+        "postgresql",
+        "redis"
+      ],
+      "estimated_hours": 180,
+      "complexity": "high",
+      "dependencies": [
+        "PAY-101"
+      ]
+    },
+    {
+      "component_id": "WH-103",
+      "name": "Webhook delivery service",
+      "description": "Signed outbound webhooks with exponential backoff, dead-letter queue, and merchant-facing delivery status dashboard.",
+      "tech_stack": [
+        "node_express",
+        "rabbitmq",
+        "redis"
+      ],
+      "estimated_hours": 100,
+      "complexity": "medium",
+      "dependencies": [
+        "PAY-101"
+      ]
+    },
+    {
+      "component_id": "PORT-104",
+      "name": "Merchant self-service portal",
+      "description": "React SPA for API key management, transaction search, and payout configuration with role-based access control.",
+      "tech_stack": [
+        "react",
+        "node_express",
+        "postgresql"
+      ],
+      "estimated_hours": 120,
+      "complexity": "medium",
+      "dependencies": [
+        "PAY-101",
+        "WH-103"
+      ]
+    },
+    {
+      "component_id": "COMP-105",
+      "name": "PCI-DSS compliance hardening",
+      "description": "Network segmentation documentation, tokenization of card data, and automated vulnerability scanning in CI pipeline.",
+      "tech_stack": [
+        "node_express",
+        "vault",
+        "terraform"
+      ],
+      "estimated_hours": 80,
+      "complexity": "high",
+      "dependencies": [
+        "PAY-101"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+# Catálogo de fuentes — Proyecto 2 (Sesión 06)
+#
+# Cargado por app.ingestion.catalog.loader.load_catalog
+# y validado contra app.ingestion.catalog.models.
+
+version: "1.0.0"
+description: >
+  Catálogo del Proyecto 2 — fuentes auditadas para el subsistema de ingesta.
+  Presupuestos JSON (S7 schema) y transcripciones TXT (S9).
+
+sources:
+  - name: presupuestos_json
+    description: >
+      Presupuestos históricos en formato JSON (schema S7). Cada fichero un presupuesto.
+      Fuente principal para retrieval de estimaciones similares.
+    location: budgets
+    owners: ["comercial@empresa.local"]
+    format: json
+    volume_estimate: "≈ 15 ficheros, 5-15 KB cada uno"
+    refresh_declared: "Semanal tras cierre comercial."
+    refresh_observed: "Corpus inicial desde data/budgets_sample.json."
+    quality:
+      completeness: 5
+      consistency: 5
+      actuality: 5
+      reliability: 5
+    sensitivity:
+      has_pii: true
+      pii_flags: ["PERSON", "EMAIL", "BUDGET_ID"]
+      access_level: confidential
+    lineage:
+      - "Corpus sintético del curso (data/budgets_sample.json)."
+    decision: include
+    last_audited: 2026-06-16T09:00:00Z
+
+  - name: transcripciones_txt
+    description: >
+      Transcripciones de reuniones cliente-equipo con tags [hh:mm:ss] Speaker:.
+    location: transcripts
+    owners: ["delivery@empresa.local"]
+    format: txt
+    volume_estimate: "≈ 3 ficheros"
+    refresh_declared: "Por reunión, agregadas semanalmente."
+    refresh_observed: "Transcripciones S9 en examples/transcripts/."
+    quality:
+      completeness: 4
+      consistency: 4
+      actuality: 5
+      reliability: 4
+    sensitivity:
+      has_pii: true
+      pii_flags: ["PERSON", "EMAIL", "BUDGET_ID", "LOCATION"]
+      access_level: confidential
+    lineage:
+      - "Pre-work Sesión 9 (examples/transcripts/)."
+    decision: include
+    last_audited: 2026-06-16T09:00:00Z
+
+  - name: rate_card_xlsx
+    description: >
+      Tarifas internas por rol/senioridad. Una sola hoja en XLSX.
+    location: rate_card_2024.xlsx
+    owners: ["operaciones@empresa.local"]
+    format: xlsx
+    volume_estimate: "1 hoja, ~12 filas"
+    refresh_declared: "Anual, revisión por dirección."
+    refresh_observed: "No disponible en el corpus del repo."
+    quality:
+      completeness: 4
+      consistency: 5
+      actuality: 1
+      reliability: 4
+    sensitivity:
+      has_pii: false
+      pii_flags: []
+      access_level: internal
+    lineage:
+      - "Excel mantenido por operaciones."
+    decision: exclude
+    decision_reason: >
+      actuality=1 — fuente no presente en data/seed y tarifas obsoletas.
+      Promover a review cuando operaciones publique la revisión 2025.
+    last_audited: 2026-06-16T09:00:00Z

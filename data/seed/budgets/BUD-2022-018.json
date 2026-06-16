@@ -1,0 +1,72 @@
+{
+  "budget_id": "BUD-2022-018",
+  "client_metadata": {
+    "name": "PlantOps",
+    "sector": "industrial",
+    "country": "MX"
+  },
+  "project_summary": "Warehouse management system with RFID gate automation and SAP WM integration",
+  "main_technology": "java_spring_boot",
+  "year": 2022,
+  "total_estimated_hours": 560,
+  "components": [
+    {
+      "component_id": "WMS-1101",
+      "name": "Core WMS (Spring Boot)",
+      "description": "Receiving, put-away, picking, and shipping workflows with bin-level inventory tracking.",
+      "tech_stack": [
+        "java_spring_boot",
+        "oracle_db",
+        "rabbitmq"
+      ],
+      "estimated_hours": 200,
+      "complexity": "high",
+      "dependencies": []
+    },
+    {
+      "component_id": "RFID-1102",
+      "name": "RFID gate automation",
+      "description": "Antenna event processing, duplicate read filtering, and automatic GR/GI posting triggers.",
+      "tech_stack": [
+        "java_spring_boot",
+        "oracle_db",
+        "rfid_hardware"
+      ],
+      "estimated_hours": 120,
+      "complexity": "high",
+      "dependencies": [
+        "WMS-1101"
+      ]
+    },
+    {
+      "component_id": "SAP-1103",
+      "name": "SAP WM integration layer",
+      "description": "IDoc and BAPI interfaces for stock transfers, delivery confirmations, and master data sync.",
+      "tech_stack": [
+        "java_spring_boot",
+        "sap_pi",
+        "oracle_db"
+      ],
+      "estimated_hours": 160,
+      "complexity": "high",
+      "dependencies": [
+        "WMS-1101"
+      ]
+    },
+    {
+      "component_id": "HAND-1104",
+      "name": "Handheld scanner UI (Android)",
+      "description": "Kotlin app for forklift operators with offline queue and voice-directed picking prompts.",
+      "tech_stack": [
+        "kotlin",
+        "android",
+        "java_spring_boot"
+      ],
+      "estimated_hours": 80,
+      "complexity": "medium",
+      "dependencies": [
+        "WMS-1101"
+      ]
+    }
+  ]
+}

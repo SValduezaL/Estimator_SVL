@@ -1,0 +1,75 @@
+{
+  "budget_id": "BUD-2024-007",
+  "client_metadata": {
+    "name": "PharmaTrack",
+    "sector": "healthcare",
+    "country": "CH"
+  },
+  "project_summary": "Cold-chain logistics tracking for pharmaceutical distribution with GxP validation documentation",
+  "main_technology": "go",
+  "year": 2024,
+  "total_estimated_hours": 480,
+  "components": [
+    {
+      "component_id": "IOT-801",
+      "name": "Temperature sensor gateway (Go)",
+      "description": "High-throughput ingestion of IoT sensor readings with edge buffering and anomaly detection.",
+      "tech_stack": [
+        "go",
+        "mqtt",
+        "influxdb",
+        "kubernetes"
+      ],
+      "estimated_hours": 140,
+      "complexity": "high",
+      "dependencies": []
+    },
+    {
+      "component_id": "CHAIN-802",
+      "name": "Shipment chain-of-custody ledger",
+      "description": "Immutable event log per pallet with QR scanning at handoff points and deviation reports.",
+      "tech_stack": [
+        "go",
+        "postgresql",
+        "redis"
+      ],
+      "estimated_hours": 120,
+      "complexity": "medium",
+      "dependencies": [
+        "IOT-801"
+      ]
+    },
+    {
+      "component_id": "GXP-803",
+      "name": "GxP validation package",
+      "description": "IQ/OQ/PQ documentation templates, traceability matrix, and electronic signature workflow for releases.",
+      "tech_stack": [
+        "go",
+        "postgresql",
+        "document_management"
+      ],
+      "estimated_hours": 100,
+      "complexity": "high",
+      "dependencies": [
+        "IOT-801",
+        "CHAIN-802"
+      ]
+    },
+    {
+      "component_id": "OPS-804",
+      "name": "Operations control tower UI",
+      "description": "Angular SPA for logistics coordinators with map view, alerts, and batch recall simulation.",
+      "tech_stack": [
+        "angular",
+        "typescript",
+        "go",
+        "mapbox"
+      ],
+      "estimated_hours": 120,
+      "complexity": "medium",
+      "dependencies": [
+        "CHAIN-802"
+      ]
+    }
+  ]
+}

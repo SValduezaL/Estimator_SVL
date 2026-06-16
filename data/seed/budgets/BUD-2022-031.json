@@ -1,0 +1,89 @@
+{
+  "budget_id": "BUD-2022-031",
+  "client_metadata": {
+    "name": "InsureLink",
+    "sector": "finance",
+    "country": "FR"
+  },
+  "project_summary": "Insurance policy administration system with actuarial rating engine and claims workflow",
+  "main_technology": "java_spring_boot",
+  "year": 2022,
+  "total_estimated_hours": 840,
+  "components": [
+    {
+      "component_id": "POL-201",
+      "name": "Policy lifecycle management",
+      "description": "CRUD for policies, endorsements, and renewals with state machine transitions and document generation (PDF).",
+      "tech_stack": [
+        "java_spring_boot",
+        "postgresql",
+        "kafka"
+      ],
+      "estimated_hours": 200,
+      "complexity": "high",
+      "dependencies": []
+    },
+    {
+      "component_id": "RATE-202",
+      "name": "Actuarial rating engine",
+      "description": "Rule-based premium calculation with configurable factors, batch recalculation jobs, and audit of rating decisions.",
+      "tech_stack": [
+        "java_spring_boot",
+        "postgresql",
+        "drools"
+      ],
+      "estimated_hours": 220,
+      "complexity": "high",
+      "dependencies": [
+        "POL-201"
+      ]
+    },
+    {
+      "component_id": "CLM-203",
+      "name": "Claims intake and adjudication",
+      "description": "Multi-step claims forms, fraud scoring hooks, and adjuster assignment workflow with SLA tracking.",
+      "tech_stack": [
+        "java_spring_boot",
+        "postgresql",
+        "elasticsearch"
+      ],
+      "estimated_hours": 180,
+      "complexity": "high",
+      "dependencies": [
+        "POL-201"
+      ]
+    },
+    {
+      "component_id": "INT-204",
+      "name": "Broker integration API",
+      "description": "REST and SOAP endpoints for external brokers with mutual TLS and contract versioning.",
+      "tech_stack": [
+        "java_spring_boot",
+        "postgresql",
+        "apigee"
+      ],
+      "estimated_hours": 140,
+      "complexity": "medium",
+      "dependencies": [
+        "POL-201",
+        "RATE-202"
+      ]
+    },
+    {
+      "component_id": "REP-205",
+      "name": "Regulatory reporting module",
+      "description": "Scheduled exports for Solvency II metrics and internal management dashboards.",
+      "tech_stack": [
+        "java_spring_boot",
+        "postgresql",
+        "power_bi"
+      ],
+      "estimated_hours": 100,
+      "complexity": "medium",
+      "dependencies": [
+        "POL-201",
+        "CLM-203"
+      ]
+    }
+  ]
+}

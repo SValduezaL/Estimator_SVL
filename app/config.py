@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from typing import Any, Literal
 from functools import lru_cache
 
@@ -36,6 +37,13 @@ class Settings(BaseSettings):
     database_url: str = Field(
         default="postgresql+asyncpg://estimator:estimator@localhost:5432/estimator",
     )
+
+    # Ingesta offline (S6)
+    catalog_path: Path = Field(default=Path("data/catalog/catalog.yaml"))
+    ingestion_data_root: Path = Field(default=Path("data/seed"))
+    presidio_spacy_model: str = Field(default="es_core_news_md")
+    pseudonym_faker_locale: str = Field(default="es_ES")
+    pseudonym_hash_salt: str = Field(default="change-me-in-prod")
 
     # Caché Redis (opcional): vacío = sin caché; p. ej. redis://redis:6379/0 en Compose
     redis_url: str | None = Field(default=None)
@@ -136,6 +144,15 @@ class Settings(BaseSettings):
         if self.semantic_cache_ttl_seconds is not None:
             return int(self.semantic_cache_ttl_seconds)
         return int(self.cache_ttl_seconds)
+
+    def sync_database_url(self) -> str:
+        """URL sync (psycopg) derivada de database_url para jobs/PII de ingesta."""
+        url = self.database_url
+        if "+asyncpg" in url:
+            return url.replace("+asyncpg", "+psycopg")
+        if url.startswith("postgresql://"):
+            return url.replace("postgresql://", "postgresql+psycopg://", 1)
+        return url
 
     @model_validator(mode="after")
     def validate_llm_settings(self) -> "Settings":

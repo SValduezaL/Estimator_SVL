@@ -1,4 +1,4 @@
-"""Data access helpers for document/chunk persistence."""
+"""Async data access helpers for document/chunk persistence."""
 
 from __future__ import annotations
 

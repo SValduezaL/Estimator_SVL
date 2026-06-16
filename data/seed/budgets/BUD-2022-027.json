@@ -1,0 +1,74 @@
+{
+  "budget_id": "BUD-2022-027",
+  "client_metadata": {
+    "name": "OmniCart",
+    "sector": "ecommerce",
+    "country": "UK"
+  },
+  "project_summary": "Legacy Magento migration to Vue.js SPA with Laravel order API and ERP synchronization",
+  "main_technology": "laravel",
+  "year": 2022,
+  "total_estimated_hours": 580,
+  "components": [
+    {
+      "component_id": "ORD-501",
+      "name": "Order management API (Laravel)",
+      "description": "Order creation, status transitions, refunds, and invoice generation with idempotent ERP callbacks.",
+      "tech_stack": [
+        "laravel",
+        "php",
+        "mysql",
+        "redis"
+      ],
+      "estimated_hours": 140,
+      "complexity": "medium",
+      "dependencies": []
+    },
+    {
+      "component_id": "SPA-502",
+      "name": "Customer-facing Vue.js storefront",
+      "description": "Migration of Magento themes to Vue 3 composition API with Pinia state and lazy-loaded routes.",
+      "tech_stack": [
+        "vuejs",
+        "typescript",
+        "vite",
+        "tailwind"
+      ],
+      "estimated_hours": 180,
+      "complexity": "medium",
+      "dependencies": [
+        "ORD-501"
+      ]
+    },
+    {
+      "component_id": "ERP-503",
+      "name": "SAP Business One integration",
+      "description": "Bidirectional sync of products, stock levels, and shipments via Service Layer with error reconciliation.",
+      "tech_stack": [
+        "laravel",
+        "php",
+        "sap_b1"
+      ],
+      "estimated_hours": 160,
+      "complexity": "high",
+      "dependencies": [
+        "ORD-501"
+      ]
+    },
+    {
+      "component_id": "MIG-504",
+      "name": "Data migration toolkit",
+      "description": "One-off ETL from Magento 2 tables to new schema with validation reports and rollback scripts.",
+      "tech_stack": [
+        "php",
+        "mysql",
+        "python"
+      ],
+      "estimated_hours": 100,
+      "complexity": "high",
+      "dependencies": [
+        "ORD-501"
+      ]
+    }
+  ]
+}

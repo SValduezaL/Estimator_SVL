@@ -1,0 +1,73 @@
+{
+  "budget_id": "BUD-2023-022",
+  "client_metadata": {
+    "name": "FactoryIQ",
+    "sector": "industrial",
+    "country": "DE"
+  },
+  "project_summary": "Manufacturing execution system (MES) lite for shop-floor tracking and OEE dashboards",
+  "main_technology": "go",
+  "year": 2023,
+  "total_estimated_hours": 600,
+  "components": [
+    {
+      "component_id": "SF-901",
+      "name": "Shop-floor workstation API",
+      "description": "Work order start/stop events, scrap reporting, and barcode scanning integration with PLC opc-ua bridge.",
+      "tech_stack": [
+        "go",
+        "postgresql",
+        "opc_ua",
+        "mqtt"
+      ],
+      "estimated_hours": 180,
+      "complexity": "high",
+      "dependencies": []
+    },
+    {
+      "component_id": "OEE-902",
+      "name": "OEE calculation and dashboards",
+      "description": "Availability, performance, and quality metrics aggregated per line/shift with Grafana embedding.",
+      "tech_stack": [
+        "go",
+        "timescaledb",
+        "grafana"
+      ],
+      "estimated_hours": 140,
+      "complexity": "medium",
+      "dependencies": [
+        "SF-901"
+      ]
+    },
+    {
+      "component_id": "PLAN-903",
+      "name": "Production planning interface",
+      "description": "Drag-and-drop schedule board synced from ERP work orders with conflict detection.",
+      "tech_stack": [
+        "react",
+        "go",
+        "postgresql"
+      ],
+      "estimated_hours": 150,
+      "complexity": "medium",
+      "dependencies": [
+        "SF-901"
+      ]
+    },
+    {
+      "component_id": "MAINT-904",
+      "name": "Preventive maintenance module",
+      "description": "Asset registry, maintenance tickets, and spare parts inventory linked to work centers.",
+      "tech_stack": [
+        "go",
+        "postgresql",
+        "react"
+      ],
+      "estimated_hours": 130,
+      "complexity": "medium",
+      "dependencies": [
+        "SF-901"
+      ]
+    }
+  ]
+}

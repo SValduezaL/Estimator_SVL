@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import ssl
-from typing import Any
-
 from collections.abc import AsyncGenerator
+from functools import lru_cache
+from typing import Any
 
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
-from app.foundation.persistence.database import get_async_session
+from app.foundation.persistence.database import get_async_session, get_sync_session
+from app.ingestion.catalog import DataCatalog, load_catalog
+from app.ingestion.loaders.filesystem import FileSystemLoader
+from app.ingestion.parsers.registry import ParserRegistry, default_registry
 from app.domain.estimation_service import EstimationService
 from app.foundation.guardrails.pipeline import create_openai_client
 from app.foundation.llm.runtime_config import RuntimeModelConfig
@@ -233,3 +237,33 @@ def build_chunkers(names: list[str], settings: Settings | None = None) -> list[C
         else:
             chunkers.append(factory())
     return chunkers
+
+
+@lru_cache
+def get_catalog() -> DataCatalog:
+    settings = get_settings()
+    return load_catalog(settings.catalog_path)
+
+
+@lru_cache
+def get_filesystem_loader() -> FileSystemLoader:
+    settings = get_settings()
+    return FileSystemLoader(data_root=settings.ingestion_data_root)
+
+
+@lru_cache
+def get_parser_registry() -> ParserRegistry:
+    return default_registry()
+
+
+def build_pseudonymizer(session: Session):
+    from app.ingestion.pii import ConsistentPseudonymizer, PostgresMappingStore, build_analyzer
+
+    settings = get_settings()
+    return ConsistentPseudonymizer(
+        analyzer=build_analyzer(),
+        mapping_store=PostgresMappingStore(session),
+        salt=settings.pseudonym_hash_salt,
+        faker_locale=settings.pseudonym_faker_locale,
+        language="es",
+    )

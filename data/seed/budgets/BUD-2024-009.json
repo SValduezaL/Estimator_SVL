@@ -1,0 +1,75 @@
+{
+  "budget_id": "BUD-2024-009",
+  "client_metadata": {
+    "name": "FreshBasket",
+    "sector": "ecommerce",
+    "country": "PL"
+  },
+  "project_summary": "Grocery delivery platform with slot-based routing optimization and cold-chain last mile",
+  "main_technology": "elixir_phoenix",
+  "year": 2024,
+  "total_estimated_hours": 490,
+  "components": [
+    {
+      "component_id": "CAT-1301",
+      "name": "Catalog and pricing service",
+      "description": "Perishable SKU management, dynamic pricing by zone, and substitution rules at pick time.",
+      "tech_stack": [
+        "elixir",
+        "phoenix",
+        "postgresql"
+      ],
+      "estimated_hours": 110,
+      "complexity": "medium",
+      "dependencies": []
+    },
+    {
+      "component_id": "ROUTE-1302",
+      "name": "Delivery slot and routing optimizer",
+      "description": "VRP solver integration for driver routes, slot capacity, and real-time ETA updates to customers.",
+      "tech_stack": [
+        "elixir",
+        "phoenix",
+        "postgresql",
+        "osrm"
+      ],
+      "estimated_hours": 150,
+      "complexity": "high",
+      "dependencies": [
+        "CAT-1301"
+      ]
+    },
+    {
+      "component_id": "PICK-1303",
+      "name": "Warehouse pick-and-pack app",
+      "description": "Tablet UI for pickers with batch picking, temperature zone labels, and weight verification.",
+      "tech_stack": [
+        "react",
+        "phoenix",
+        "postgresql"
+      ],
+      "estimated_hours": 120,
+      "complexity": "medium",
+      "dependencies": [
+        "CAT-1301"
+      ]
+    },
+    {
+      "component_id": "COLD-1304",
+      "name": "Cold-chain compliance tracker",
+      "description": "Temperature logger integration in delivery bags with breach alerts and customer proof of delivery.",
+      "tech_stack": [
+        "elixir",
+        "phoenix",
+        "iot_sensors",
+        "postgresql"
+      ],
+      "estimated_hours": 110,
+      "complexity": "medium",
+      "dependencies": [
+        "ROUTE-1302",
+        "PICK-1303"
+      ]
+    }
+  ]
+}

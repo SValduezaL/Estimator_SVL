@@ -1,0 +1,77 @@
+{
+  "budget_id": "BUD-2023-019",
+  "client_metadata": {
+    "name": "HealthSync",
+    "sector": "healthcare",
+    "country": "US"
+  },
+  "project_summary": "Remote patient monitoring platform with wearable device ingestion and clinician alerting",
+  "main_technology": "python_fastapi",
+  "year": 2023,
+  "total_estimated_hours": 540,
+  "components": [
+    {
+      "component_id": "ING-701",
+      "name": "Device telemetry ingestion pipeline",
+      "description": "MQTT and REST ingestion from Fitbit, Apple HealthKit exports, and custom BLE devices with schema validation.",
+      "tech_stack": [
+        "python",
+        "fastapi",
+        "kafka",
+        "timescaledb"
+      ],
+      "estimated_hours": 150,
+      "complexity": "high",
+      "dependencies": []
+    },
+    {
+      "component_id": "RULE-702",
+      "name": "Clinical alerting rules engine",
+      "description": "Configurable thresholds for vitals, escalation to on-call nurses, and HIPAA-compliant notification delivery.",
+      "tech_stack": [
+        "python",
+        "fastapi",
+        "postgresql",
+        "celery"
+      ],
+      "estimated_hours": 130,
+      "complexity": "high",
+      "dependencies": [
+        "ING-701"
+      ]
+    },
+    {
+      "component_id": "DASH-703",
+      "name": "Clinician monitoring dashboard",
+      "description": "React dashboard with patient cohort views, trend charts, and acknowledgment of alerts.",
+      "tech_stack": [
+        "react",
+        "typescript",
+        "fastapi",
+        "postgresql"
+      ],
+      "estimated_hours": 120,
+      "complexity": "medium",
+      "dependencies": [
+        "ING-701",
+        "RULE-702"
+      ]
+    },
+    {
+      "component_id": "MOB-704",
+      "name": "Patient mobile companion app",
+      "description": "Flutter app for daily symptom logs, medication reminders, and secure messaging with care team.",
+      "tech_stack": [
+        "flutter",
+        "dart",
+        "fastapi",
+        "firebase"
+      ],
+      "estimated_hours": 140,
+      "complexity": "medium",
+      "dependencies": [
+        "ING-701"
+      ]
+    }
+  ]
+}

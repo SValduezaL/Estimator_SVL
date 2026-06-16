@@ -1,0 +1,89 @@
+{
+  "budget_id": "BUD-2024-011",
+  "client_metadata": {
+    "name": "MedCare Portal",
+    "sector": "healthcare",
+    "country": "ES"
+  },
+  "project_summary": "Patient portal with appointment scheduling, HL7 FHIR integration, and GDPR-compliant health records",
+  "main_technology": "dotnet",
+  "year": 2024,
+  "total_estimated_hours": 650,
+  "components": [
+    {
+      "component_id": "FHIR-601",
+      "name": "FHIR R4 resource gateway",
+      "description": "Patient, Observation, and Appointment resources exposed via FHIR API with SMART on FHIR authorization.",
+      "tech_stack": [
+        "dotnet",
+        "csharp",
+        "sql_server",
+        "azure"
+      ],
+      "estimated_hours": 180,
+      "complexity": "high",
+      "dependencies": []
+    },
+    {
+      "component_id": "APT-602",
+      "name": "Appointment scheduling module",
+      "description": "Provider calendars, waitlist, SMS reminders, and integration with clinic management system.",
+      "tech_stack": [
+        "dotnet",
+        "csharp",
+        "sql_server",
+        "twilio"
+      ],
+      "estimated_hours": 140,
+      "complexity": "medium",
+      "dependencies": [
+        "FHIR-601"
+      ]
+    },
+    {
+      "component_id": "EHR-603",
+      "name": "Electronic health record viewer",
+      "description": "Read-only timeline of lab results, prescriptions, and visit notes with field-level encryption at rest.",
+      "tech_stack": [
+        "dotnet",
+        "react",
+        "sql_server",
+        "azure_key_vault"
+      ],
+      "estimated_hours": 160,
+      "complexity": "high",
+      "dependencies": [
+        "FHIR-601"
+      ]
+    },
+    {
+      "component_id": "GDPR-604",
+      "name": "Consent and data subject rights",
+      "description": "Consent capture UI, export/portability requests, and right-to-erasure workflow with audit logs.",
+      "tech_stack": [
+        "dotnet",
+        "csharp",
+        "sql_server"
+      ],
+      "estimated_hours": 100,
+      "complexity": "medium",
+      "dependencies": [
+        "FHIR-601",
+        "EHR-603"
+      ]
+    },
+    {
+      "component_id": "AUTH-605",
+      "name": "Healthcare identity provider",
+      "description": "Integration with national health ID (SNS) and MFA for clinician vs patient roles.",
+      "tech_stack": [
+        "dotnet",
+        "openid_connect",
+        "azure_ad_b2c"
+      ],
+      "estimated_hours": 70,
+      "complexity": "medium",
+      "dependencies": []
+    }
+  ]
+}

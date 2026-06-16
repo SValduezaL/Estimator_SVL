@@ -1,0 +1,74 @@
+{
+  "budget_id": "BUD-2024-003",
+  "client_metadata": {
+    "name": "ShopNova",
+    "sector": "ecommerce",
+    "country": "ES"
+  },
+  "project_summary": "Headless e-commerce storefront with real-time inventory and personalized product recommendations",
+  "main_technology": "nextjs",
+  "year": 2024,
+  "total_estimated_hours": 520,
+  "components": [
+    {
+      "component_id": "STORE-301",
+      "name": "Headless storefront (Next.js)",
+      "description": "SSR/ISR product catalog, cart, and checkout UI consuming Commerce API with i18n for ES/PT markets.",
+      "tech_stack": [
+        "nextjs",
+        "react",
+        "typescript",
+        "vercel"
+      ],
+      "estimated_hours": 160,
+      "complexity": "medium",
+      "dependencies": []
+    },
+    {
+      "component_id": "INV-302",
+      "name": "Real-time inventory service",
+      "description": "Stock reservation at checkout, warehouse sync via events, and low-stock alerts to merchandising team.",
+      "tech_stack": [
+        "node_express",
+        "postgresql",
+        "redis"
+      ],
+      "estimated_hours": 120,
+      "complexity": "high",
+      "dependencies": []
+    },
+    {
+      "component_id": "REC-303",
+      "name": "Recommendation microservice",
+      "description": "Collaborative filtering pipeline with A/B test hooks and fallback to rule-based bestsellers.",
+      "tech_stack": [
+        "python",
+        "fastapi",
+        "redis",
+        "bigquery"
+      ],
+      "estimated_hours": 140,
+      "complexity": "high",
+      "dependencies": [
+        "STORE-301",
+        "INV-302"
+      ]
+    },
+    {
+      "component_id": "PAY-304",
+      "name": "Checkout and payments integration",
+      "description": "Stripe Payment Element, BNPL provider hook, and order confirmation emails via SendGrid.",
+      "tech_stack": [
+        "nextjs",
+        "node_express",
+        "stripe"
+      ],
+      "estimated_hours": 100,
+      "complexity": "medium",
+      "dependencies": [
+        "STORE-301",
+        "INV-302"
+      ]
+    }
+  ]
+}

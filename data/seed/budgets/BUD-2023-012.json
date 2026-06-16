@@ -1,0 +1,74 @@
+{
+  "budget_id": "BUD-2023-012",
+  "client_metadata": {
+    "name": "CryptoVault",
+    "sector": "finance",
+    "country": "SG"
+  },
+  "project_summary": "Custodial crypto wallet mobile app with multi-sig and travel rule compliance",
+  "main_technology": "react_native",
+  "year": 2023,
+  "total_estimated_hours": 500,
+  "components": [
+    {
+      "component_id": "WALLET-1201",
+      "name": "Multi-sig wallet core",
+      "description": "HSM-backed key management, 2-of-3 signing flows, and support for BTC/ETH stablecoin transfers.",
+      "tech_stack": [
+        "node_express",
+        "typescript",
+        "postgresql",
+        "aws_cloudhsm"
+      ],
+      "estimated_hours": 180,
+      "complexity": "high",
+      "dependencies": []
+    },
+    {
+      "component_id": "MOB-1202",
+      "name": "React Native mobile client",
+      "description": "Biometric unlock, transaction history, and push notifications for pending signatures.",
+      "tech_stack": [
+        "react_native",
+        "typescript",
+        "redux"
+      ],
+      "estimated_hours": 140,
+      "complexity": "medium",
+      "dependencies": [
+        "WALLET-1201"
+      ]
+    },
+    {
+      "component_id": "TRAVEL-1203",
+      "name": "Travel rule compliance module",
+      "description": "IVMS101 payload exchange with counterparty VASPs and sanctions screening integration.",
+      "tech_stack": [
+        "node_express",
+        "postgresql",
+        "chainalysis_api"
+      ],
+      "estimated_hours": 120,
+      "complexity": "high",
+      "dependencies": [
+        "WALLET-1201"
+      ]
+    },
+    {
+      "component_id": "AUD-1204",
+      "name": "Transaction audit and reporting",
+      "description": "Immutable audit log, regulatory export formats, and admin investigation tools.",
+      "tech_stack": [
+        "node_express",
+        "postgresql",
+        "elasticsearch"
+      ],
+      "estimated_hours": 60,
+      "complexity": "medium",
+      "dependencies": [
+        "WALLET-1201",
+        "TRAVEL-1203"
+      ]
+    }
+  ]
+}
